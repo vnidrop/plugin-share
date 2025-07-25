@@ -18,6 +18,9 @@ import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
+import java.io.IOException
+import java.net.URLDecoder
+import java.util.UUID
 
 @InvokeArg
 class ShareTextOptions {
@@ -95,5 +98,102 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
         } catch (e: Exception) {
             invoke.reject("Failed to share file: ${e.message}", e)
         }
+    }
+
+    /**
+     * Creates and launches the ACTION_SEND Intent using the configured FileProvider.
+     */
+    private fun launchShareIntent(invoke: Invoke, file: File, mimeType: String, title: String?) {
+        val authority = "${activity.packageName}.fileprovider"
+        val contentUri = FileProvider.getUriForFile(activity, authority, file)
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (title!= null) {
+                putExtra(Intent.EXTRA_TITLE, title)
+            }
+        }
+
+        val chooser = Intent.createChooser(shareIntent, title)
+        activity.startActivity(chooser)
+        invoke.resolve()
+    }
+
+    /**
+     * Returns the dedicated, secure directory for storing temporary share files.
+     * Creates it if it doesn't exist.
+     */
+    private fun getSafeShareDir(): File {
+        val shareDir = File(activity.cacheDir, "shares")
+        if (!shareDir.exists()) {
+            shareDir.mkdirs()
+        }
+        return shareDir
+    }
+
+    /**
+     * Creates a safe File object within the dedicated share directory.
+     * It sanitizes the filename and performs path traversal checks.
+     */
+    @Throws(IOException::class, SecurityException::class)
+    private fun createSafeFileForData(untrustedFileName: String): File {
+        val safeDir = getSafeShareDir()
+        val safeDirCanonicalPath = safeDir.canonicalPath
+
+        // Sanitize the filename to prevent malicious characters.
+        // A robust approach is to allow only a whitelist of characters.
+        // Here, we also add a UUID to prevent name collisions.
+        val sanitizedBaseName = untrustedFileName.replace(Regex("[^a-zA-Z0-9._-]"), "")
+        val finalFileName = "${UUID.randomUUID()}-${sanitizedBaseName}"
+
+        if (finalFileName.isEmpty()) {
+            throw SecurityException("Invalid filename: sanitized name is empty.")
+        }
+
+        val intendedFile = File(safeDir, finalFileName)
+
+        // CRITICAL: Path Traversal Check
+        // Ensure the final resolved path is still inside our secure directory.
+        if (!intendedFile.canonicalPath.startsWith(safeDirCanonicalPath + File.separator)) {
+            throw SecurityException("Path Traversal Attack Detected. Malicious filename: '$untrustedFileName'")
+        }
+
+        return intendedFile
+    }
+
+    /**
+     * Parses a Tauri asset protocol URL, decodes the file path, and validates it
+     * against path traversal vulnerabilities.
+     */
+    @Throws(IOException::class, SecurityException::class)
+    private fun getValidatedSourceFileFromAssetUrl(assetUrl: String): File {
+        if (!assetUrl.startsWith("asset://localhost/")) {
+            throw IllegalArgumentException("Invalid asset URL. Must start with 'asset://localhost/'.")
+        }
+
+        val encodedPath = assetUrl.substring("asset://localhost/".length)
+        val untrustedPath = URLDecoder.decode(encodedPath, "UTF-8")
+
+        val sourceFile = File(untrustedPath)
+        val canonicalPath = sourceFile.canonicalPath
+
+        // 4. CRITICAL: Validate the canonical path against the app's data directories.
+        // This check ensures the path is within a legitimate app folder, preventing
+        // access to arbitrary system files like /etc/passwd.
+        // This should align with your `assetScope` in `tauri.conf.json`.
+        val cacheDir = activity.cacheDir.canonicalPath
+        val filesDir = activity.filesDir.canonicalPath
+
+        if (!canonicalPath.startsWith(cacheDir) &&!canonicalPath.startsWith(filesDir)) {
+            throw SecurityException("Path Traversal Attack Detected. Asset path '$untrustedPath' is outside the allowed scope.")
+        }
+
+        if (!sourceFile.exists() ||!sourceFile.isFile) {
+            throw IOException("Source file does not exist or is not a file: $untrustedPath")
+        }
+
+        return sourceFile
     }
 }
