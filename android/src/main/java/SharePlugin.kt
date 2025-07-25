@@ -102,7 +102,7 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
 
             val fileName = getFileNameFromUri(contentResolver, contentUri)
 
-            val mimeType = contentResolver.getType(contentUri)?: "application/octet-stream" [1,2,3]
+            val mimeType = contentResolver.getType(contentUri)?: "application/octet-stream"
 
             val tempFile = createSafeFile(fileName)
 
