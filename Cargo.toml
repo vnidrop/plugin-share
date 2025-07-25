@@ -1,11 +1,13 @@
 [package]
 name = "tauri-plugin-share"
-version = "0.1.0"
-authors = [ "You" ]
-description = ""
+version = "0.0.1"
+description = "A Tauri plugin for sharing content via the system's share dialog."
+license = "MIT"
+authors = [ "Abass Hammed", "Vnidrop" ]
 edition = "2021"
 rust-version = "1.77.2"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+repository = "https://github.com/vnidrop/plugin-share"
 links = "tauri-plugin-share"
 
 [dependencies]
