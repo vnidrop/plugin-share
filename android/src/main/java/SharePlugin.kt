@@ -1,17 +1,13 @@
-// Source : https://github.com/rittme/tauri-plugin-sharesheet/blob/main/android/src/main/java/SharesheetPlugin.kt
-
 package plugin.vnidrop.share
 
 import android.app.Activity
+import android.content.ContentResolver
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import android.webkit.WebView
 import android.net.Uri
 import android.util.Base64
 import java.io.File
 import java.io.FileOutputStream
-import android.content.Context
+import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -19,7 +15,6 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.io.IOException
-import java.net.URLDecoder
 import java.util.UUID
 
 @InvokeArg
@@ -30,73 +25,117 @@ class ShareTextOptions {
 }
 
 @InvokeArg
-class ShareFileOptions {
+class ShareFileByDataOptions {
     lateinit var data: String
     lateinit var name: String
     var mimeType: String = "application/octet-stream"
     var title: String? = null
 }
 
+@InvokeArg
+class ShareFileByContentUriOptions {
+    lateinit var uri: String // The content:// URI string
+    var title: String? = null
+}
+
 @TauriPlugin
 class SharePlugin(private val activity: Activity): Plugin(activity) {
     /**
-     * Open the Sharesheet to share some text
+     * Opens the Sharesheet to share plain text.
      */
     @Command
     fun shareText(invoke: Invoke) {        
         val args = invoke.parseArgs(ShareTextOptions::class.java)
 
         val sendIntent = Intent().apply {
-            this.action = Intent.ACTION_SEND
-            this.type = args.mimeType
-            this.putExtra(Intent.EXTRA_TEXT, args.text)
-            this.putExtra(Intent.EXTRA_TITLE, args.title)
+            action = Intent.ACTION_SEND
+            type = args.mimeType
+            putExtra(Intent.EXTRA_TEXT, args.text)
+            putExtra(Intent.EXTRA_TITLE, args.title)
         }
 
-        val shareIntent = Intent.createChooser(sendIntent, null)
-        shareIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        activity.applicationContext?.startActivity(shareIntent)
+        val chooser = Intent.createChooser(sendIntent, args.title)
+
+        // Robustness check: Ensure there is an app that can handle this intent.
+        if (chooser.resolveActivity(activity.packageManager)!= null) {
+            activity.startActivity(chooser)
+            invoke.resolve()
+        } else {
+            invoke.reject("No app found to handle sharing text.")
+        }
     }
-    
+
     /**
-     * Open the Sharesheet to share a file
+     * Shares a file whose content is provided as a Base64 string.
+     * Ideal for small, dynamically generated files.
+     */
+    @Command
+    fun shareData(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ShareFileByDataOptions::class.java)
+            val decodedBytes = Base64.decode(args.data, Base64.DEFAULT)
+
+            // Create a secure file in our dedicated share cache
+            val tempFile = createSafeFile(args.name)
+
+            // Write the decoded data to the secure file
+            FileOutputStream(tempFile).use { it.write(decodedBytes) }
+
+            // Launch the share intent
+            launchShareIntent(invoke, tempFile, args.mimeType, args.title)
+        } catch (e: Exception) {
+            invoke.reject("Failed to share file from data: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Securely shares a file from an external source (e.g., file picker) using its content URI.
+     * This method follows Android's best practices by copying the file content into the app's
+     * private cache, ensuring the app has proper authority to share it via FileProvider.
      */
     @Command
     fun shareFile(invoke: Invoke) {
-        val args = invoke.parseArgs(ShareFileOptions::class.java)
-        
         try {
-            // Decode the base64 string to bytes
-            val decodedBytes = Base64.decode(args.data, Base64.DEFAULT)
-            
-            // Create a temporary file to store the data
-            val tempFile = File(activity.cacheDir, args.name)
-            val outputStream = FileOutputStream(tempFile)
-            outputStream.write(decodedBytes)
-            outputStream.close()
-            
-            // Get the authority from the app's manifest
-            val authority = "${activity.packageName}.fileprovider"
-            
-            // Create a content URI for the file
-            val contentUri = FileProvider.getUriForFile(activity, authority, tempFile)
-            
-            // Create and start the share intent
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = args.mimeType
-                putExtra(Intent.EXTRA_STREAM, contentUri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                if (args.title != null) {
-                    putExtra(Intent.EXTRA_TITLE, args.title)
+            val args = invoke.parseArgs(ShareFileByContentUriOptions::class.java)
+            val contentUri = Uri.parse(args.uri)
+            val contentResolver = activity.contentResolver
+
+            val fileName = getFileNameFromUri(contentResolver, contentUri)
+
+            val mimeType = contentResolver.getType(contentUri)?: "application/octet-stream" [1,2,3]
+
+            val tempFile = createSafeFile(fileName)
+
+            contentResolver.openInputStream(contentUri)?.use { inputStream ->
+                FileOutputStream(tempFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }?: throw IOException("Failed to open input stream for URI: $contentUri")
+
+            launchShareIntent(invoke, tempFile, mimeType, args.title)
+
+        } catch (e: Exception) {
+            invoke.reject("Failed to share file from URI: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Deletes all temporary files created by this plugin in its dedicated share directory.
+     * This should be called by the developer when the files are no longer needed.
+     */
+    @Command
+    fun cleanup(invoke: Invoke) {
+        try {
+            val shareDir = getSafeShareDir()
+            if (shareDir.exists() && shareDir.isDirectory) {
+                if (!shareDir.deleteRecursively()) {
+                    invoke.reject("Failed to delete all temporary share files.")
+                    return
                 }
             }
-            
-            val chooserIntent = Intent.createChooser(shareIntent, null)
-            chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            activity.applicationContext?.startActivity(chooserIntent)
-            
+            invoke.resolve()
         } catch (e: Exception) {
-            invoke.reject("Failed to share file: ${e.message}", e)
+            invoke.reject("Error during cleanup: ${e.message}", e)
         }
     }
 
@@ -138,7 +177,7 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
      * It sanitizes the filename and performs path traversal checks.
      */
     @Throws(IOException::class, SecurityException::class)
-    private fun createSafeFileForData(untrustedFileName: String): File {
+    private fun createSafeFile(untrustedFileName: String): File {
         val safeDir = getSafeShareDir()
         val safeDirCanonicalPath = safeDir.canonicalPath
 
@@ -164,36 +203,18 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
     }
 
     /**
-     * Parses a Tauri asset protocol URL, decodes the file path, and validates it
-     * against path traversal vulnerabilities.
+     * Safely retrieves the display name of a file from a content URI.
      */
-    @Throws(IOException::class, SecurityException::class)
-    private fun getValidatedSourceFileFromAssetUrl(assetUrl: String): File {
-        if (!assetUrl.startsWith("asset://localhost/")) {
-            throw IllegalArgumentException("Invalid asset URL. Must start with 'asset://localhost/'.")
+    private fun getFileNameFromUri(resolver: ContentResolver, uri: Uri): String {
+        var fileName = "unknown_file"
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex!= -1) {
+                    fileName = cursor.getString(nameIndex)
+                }
+            }
         }
-
-        val encodedPath = assetUrl.substring("asset://localhost/".length)
-        val untrustedPath = URLDecoder.decode(encodedPath, "UTF-8")
-
-        val sourceFile = File(untrustedPath)
-        val canonicalPath = sourceFile.canonicalPath
-
-        // 4. CRITICAL: Validate the canonical path against the app's data directories.
-        // This check ensures the path is within a legitimate app folder, preventing
-        // access to arbitrary system files like /etc/passwd.
-        // This should align with your `assetScope` in `tauri.conf.json`.
-        val cacheDir = activity.cacheDir.canonicalPath
-        val filesDir = activity.filesDir.canonicalPath
-
-        if (!canonicalPath.startsWith(cacheDir) &&!canonicalPath.startsWith(filesDir)) {
-            throw SecurityException("Path Traversal Attack Detected. Asset path '$untrustedPath' is outside the allowed scope.")
-        }
-
-        if (!sourceFile.exists() ||!sourceFile.isFile) {
-            throw IOException("Source file does not exist or is not a file: $untrustedPath")
-        }
-
-        return sourceFile
+        return fileName
     }
 }
