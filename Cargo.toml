@@ -19,7 +19,14 @@ log = "0.4.27"
 base64 = "0.22.1"
 uuid = {version = "1.17.0", features = ["v4"]}
 
+
+raw-window-handle = "0.6.2"
+objc2-app-kit = "0.3.1"
+objc2 = "0.6.1"
+objc2-foundation = "0.3.1"
+
 [target.'cfg(windows)'.dependencies]
+windows-core = "0.61.2"
 raw-window-handle = "0.6.2"
 windows = {version = "0.61.3", features = [
   "Win32_Foundation",

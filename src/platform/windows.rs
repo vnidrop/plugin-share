@@ -4,10 +4,11 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::ApplicationModel::DataTransfer::DataTransferManager;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use tauri::{Runtime, Window};
 use tempfile::{Builder, NamedTempFile};
 use windows::{
-    core::{HSTRING, IInspectable},
+    core::{HSTRING},
     Foundation::{ TypedEventHandler},
     Storage::StorageFile,
     Win32::{
@@ -21,6 +22,7 @@ use windows::{
         },
     },
 };
+use windows_core::Interface;
 
 // A helper to map the detailed windows::core::Error into our plugin's simpler error type.
 impl From<windows::core::Error> for Error {
@@ -63,7 +65,7 @@ pub fn share_file<R: Runtime>(
     options: ShareFileOptions,
 ) -> Result<(), Error> {
     // Security: Ensure the file exists before attempting to share.
-    if!Path::new(&options.path).exists() {
+    if !Path::new(&options.path).exists() {
         return Err(Error::InvalidArgs(format!(
             "File does not exist at path: {}",
             options.path
@@ -89,75 +91,81 @@ enum SharePayload {
 /// The main entry point that handles showing the share sheet.
 /// It ensures all UI operations are run on the main thread.
 fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Result<(), Error> {
+    let (tx, rx) = mpsc::channel();
+    
     window
-       .run_on_main_thread(move |
+        .run_on_main_thread(move || {
+            let result = (|| -> Result<(), Error> {
+                initialize_winrt_thread()?;
+                let hwnd = get_hwnd(&window)?;
+                let dtm = get_data_transfer_manager(hwnd)?;
 
-| {
-            // We must initialize the WinRT Core on the thread that will show the UI.
-            // This is a requirement for DataTransferManager.
-            initialize_winrt_thread()?;
+                let data_requested_handler =
+                    TypedEventHandler::new(move |_, args: windows::core::Ref<'_, windows::ApplicationModel::DataTransfer::DataRequestedEventArgs>| -> windows::core::Result<()> {
+                        if let Some(request_args) = (*args).as_ref() {
+                            let request = request_args.Request()?;
+                            let data = request.Data()?;
+                            let properties = data.Properties()?;
 
-            let hwnd = get_hwnd(&window)?;
-            let dtm = get_data_transfer_manager(hwnd)?;
-
-            let data_requested_handler =
-                TypedEventHandler::new(move |_, args| -> windows::core::Result<()> {
-                    if let Some(request) = args {
-                        let data = request.Data()?;
-                        let properties = data.Properties()?;
-
-                        match &payload {
-                            SharePayload::Text(options) => {
-                                if let Some(title) = &options.title {
-                                    properties.SetTitle(&HSTRING::from(title))?;
+                            match &payload {
+                                SharePayload::Text(options) => {
+                                    if let Some(title) = &options.title {
+                                        properties.SetTitle(&HSTRING::from(title))?;
+                                    }
+                                    data.SetText(&HSTRING::from(&options.text))?;
                                 }
-                                data.SetText(&HSTRING::from(&options.text))?;
-                            }
-                            SharePayload::Files(paths) => {
-                                // The handler for files must be async. We need to get a deferral
-                                // to prevent the main thread from moving on before we're done.
-                                let deferral = request.GetDeferral()?;
-                                let paths_clone = paths.clone();
+                                SharePayload::Files(paths) => {
+                                    let deferral = request.GetDeferral()?;
+                                    let paths_clone = paths.clone();
+                                    let data_clone = data.clone();
 
-                                // Spawn a future to handle the async file loading.
-                                tauri::async_runtime::spawn(async move {
-                                    let mut storage_items: Vec<IInspectable> = Vec::new();
-                                    for path in paths_clone {
-                                        match StorageFile::GetFileFromPathAsync(&HSTRING::from(path)) {
-                                            Ok(op) => {
-                                                if op.await.is_ok() {
-                                                    if let Ok(file) = op.GetResults() {
-                                                        storage_items.push(file.into());
+                                    tauri::async_runtime::spawn(async move {
+                                        let mut storage_items: Vec<windows::Storage::IStorageItem> = Vec::new();
+                                        for path in paths_clone {
+                                            let op = match StorageFile::GetFileFromPathAsync(&HSTRING::from(path)) {
+                                                Ok(op) => op,
+                                                Err(e) => {
+                                                    log::error!("Failed to create file operation: {}", e);
+                                                    continue;
+                                                }
+                                            };
+                                            
+                                            match op.get() {
+                                                Ok(file) => {
+                                                    if let Ok(item) = file.cast() {
+                                                        storage_items.push(item);
                                                     }
                                                 }
-                                            }
-                                            Err(e) => {
-                                                log::error!("Failed to get StorageFile for path {}: {}", path, e);
+                                                Err(e) => log::error!("Failed to get file: {}", e),
                                             }
                                         }
-                                    }
-
-                                    if!storage_items.is_empty() {
-                                        // This is safe because we are in an async context
-                                        // that was spawned from the main thread handler.
-                                        let _ = data.SetStorageItems(&storage_items);
-                                    }
-                                    deferral.Complete()?;
-                                    Ok::<(), windows::core::Error>(())
-                                });
+                                        
+                                        if!storage_items.is_empty() {
+                                            let _ = data_clone.SetStorageItemsReadOnly(&storage_items);
+                                        }
+                                        // Signal that we are done with the async operation.
+                                        deferral.Complete()?;
+                                        Ok::<(), windows::core::Error>(())
+                                    });
+                                }
                             }
                         }
-                    }
-                    Ok(())
-                });
+                        Ok(())
+                    });
 
-            let token = dtm.DataRequested(&data_requested_handler)?;
-            DataTransferManager::ShowShareUI()?;
-            dtm.RemoveDataRequested(token)?;
+                let token = dtm.DataRequested(&data_requested_handler)?;
+                DataTransferManager::ShowShareUI()?;
+                dtm.RemoveDataRequested(token)?;
 
-            Ok(())
+                Ok(())
+            })();
+            
+            tx.send(result).ok();
         })
-       .map_err(|e| Error::NativeApi(e.to_string()))
+        .map_err(|e| Error::NativeApi(e.to_string()))?;
+
+    rx.recv()
+        .map_err(|_| Error::NativeApi("Failed to receive result from main thread".to_string()))?
 }
 
 /// Helper function to convert a Vec of file paths to a Vec of WinRT StorageFile objects.
@@ -165,9 +173,8 @@ async fn get_storage_files_from_paths(paths: &[String]) -> Result<Vec<StorageFil
     let mut storage_files = Vec::new();
     for path in paths {
         let h_path = HSTRING::from(path.as_str());
-        // GetFileFromPathAsync returns an IAsyncOperation that we can .await.
         let op = StorageFile::GetFileFromPathAsync(&h_path)?;
-        match op.await {
+        match op.get() {
             Ok(file) => storage_files.push(file),
             Err(e) => log::error!("Failed to get StorageFile for path {}: {}", path, e),
         }
@@ -185,8 +192,12 @@ fn initialize_winrt_thread() -> Result<(), Error> {
 
 /// Retrieves the native window handle (HWND) from the Tauri window.
 fn get_hwnd<R: Runtime>(window: &Window<R>) -> Result<HWND, Error> {
-    match window.window_handle()?.as_raw() {
-        RawWindowHandle::Win32(handle) => Ok(HWND(handle.hwnd.get() as isize)),
+    let handle = window
+        .window_handle()
+        .map_err(|e| Error::NativeApi(e.to_string()))?;
+
+    match handle.as_raw() {
+        RawWindowHandle::Win32(handle) => Ok(HWND(handle.hwnd.get() as *mut std::ffi::c_void)),
         _ => Err(Error::NativeApi(
             "Unsupported window handle type".to_string(),
         )),
@@ -196,15 +207,16 @@ fn get_hwnd<R: Runtime>(window: &Window<R>) -> Result<HWND, Error> {
 /// Gets an instance of the DataTransferManager associated with the window's HWND.
 /// This is the required method for desktop (non-UWP) applications. [1]
 fn get_data_transfer_manager(hwnd: HWND) -> Result<DataTransferManager, Error> {
-    let interop: IDataTransferManagerInterop = windows::core::factory::<DataTransferManager, _>()?;
-    let dtm: DataTransferManager = unsafe { interop.GetForWindow(hwnd)? };
+    let interop = 
+        windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()?;
+    let dtm = unsafe { interop.GetForWindow(hwnd) }?;
     Ok(dtm)
 }
 
 /// Returns the path to a dedicated, secure directory for this plugin's temporary files.
 fn get_plugin_temp_dir() -> Result<PathBuf, Error> {
     let dir = std::env::temp_dir().join("tauri-plugin-share");
-    if!dir.exists() {
+    if !dir.exists() {
         std::fs::create_dir_all(&dir)
            .map_err(|e| Error::TempFile(format!("Failed to create temp dir: {}", e)))?;
     }
