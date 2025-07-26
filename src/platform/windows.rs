@@ -2,6 +2,7 @@ use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::ApplicationModel::DataTransfer::DataTransferManager;
+use windows::Storage::IStorageItem;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -9,7 +10,7 @@ use tauri::{Runtime, Window};
 use tempfile::{Builder, NamedTempFile};
 use windows::{
     core::{HSTRING},
-    Foundation::{ TypedEventHandler},
+    Foundation::{TypedEventHandler},
     Storage::StorageFile,
     Win32::{
         UI::Shell::IDataTransferManagerInterop,
@@ -65,13 +66,7 @@ pub fn share_file<R: Runtime>(
     window: Window<R>,
     options: ShareFileOptions,
 ) -> Result<(), Error> {
-    // Security: Ensure the file exists before attempting to share.
-    if !Path::new(&options.path).exists() {
-        return Err(Error::InvalidArgs(format!(
-            "File does not exist at path: {}",
-            options.path
-        )));
-    }
+    // We don't check for file existence to mitigate TOCTOU
     show_share_sheet(window, SharePayload::Files(vec![options.path]))
 }
 
@@ -122,27 +117,31 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
 
                                     tauri::async_runtime::spawn(async move {
                                         let mut storage_items: Vec<windows::Storage::IStorageItem> = Vec::new();
+                                        let mut first_error: Option<windows::core::Error> = None;
+
                                         for path in paths_clone {
-                                            let op = match StorageFile::GetFileFromPathAsync(&HSTRING::from(path)) {
-                                                Ok(op) => op,
-                                                Err(e) => {
-                                                    log::error!("Failed to create file operation: {}", e);
-                                                    continue;
-                                                }
-                                            };
+                                            let op_result = StorageFile::GetFileFromPathAsync(&HSTRING::from(path));
+                                            if let Err(e) = op_result {
+                                                log::error!("Failed to create file operation: {}", e);
+                                                if first_error.is_none() { first_error = Some(e); }
+                                                continue;
+                                            }
                                             
-                                            match op.get() {
+                                            match op_result.unwrap().get() {
                                                 Ok(file) => {
                                                     if let Ok(item) = file.cast() {
                                                         storage_items.push(item);
                                                     }
                                                 }
-                                                Err(e) => log::error!("Failed to get file: {}", e),
+                                                Err(e) => {
+                                                    log::error!("Failed to get file: {}", e);
+                                                    if first_error.is_none() { first_error = Some(e); }
+                                                }
                                             }
                                         }
                                         
-                                        if!storage_items.is_empty() {
-                                            let _ = data_clone.SetStorageItemsReadOnly(&storage_items.iter().collect());
+                                        if !storage_items.is_empty() {
+                                            let _ = data_clone.SetStorageItemsReadOnly(storage_items)?;
                                         }
                                         // Signal that we are done with the async operation.
                                         deferral.Complete()?;
@@ -167,20 +166,6 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
 
     rx.recv()
         .map_err(|_| Error::NativeApi("Failed to receive result from main thread".to_string()))?
-}
-
-/// Helper function to convert a Vec of file paths to a Vec of WinRT StorageFile objects.
-async fn get_storage_files_from_paths(paths: &[String]) -> Result<Vec<StorageFile>, Error> {
-    let mut storage_files = Vec::new();
-    for path in paths {
-        let h_path = HSTRING::from(path.as_str());
-        let op = StorageFile::GetFileFromPathAsync(&h_path)?;
-        match op.get() {
-            Ok(file) => storage_files.push(file),
-            Err(e) => log::error!("Failed to get StorageFile for path {}: {}", path, e),
-        }
-    }
-    Ok(storage_files)
 }
 
 /// Initializes the Windows Runtime on the current thread.

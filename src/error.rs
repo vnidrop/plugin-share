@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use thiserror::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 // This enum defines the errors that can be sent back to the frontend.
 // Using `thiserror` makes it easy to convert from other error types,
@@ -17,7 +19,7 @@ pub enum Error {
 }
 
 impl Serialize for Error {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
