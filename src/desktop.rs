@@ -1,22 +1,20 @@
-use serde::de::DeserializeOwned;
-use tauri::{plugin::PluginApi, AppHandle, Runtime};
+use tauri::{Runtime, Window};
+use crate::{models::*, error::Error};
 
-use crate::models::*;
+use crate::platform;
 
-pub fn init<R: Runtime, C: DeserializeOwned>(
-  app: &AppHandle<R>,
-  _api: PluginApi<R, C>,
-) -> crate::Result<Share<R>> {
-  Ok(Share(app.clone()))
+pub fn share_text<R: Runtime>(window: Window<R>, options: ShareTextOptions) -> Result<(), Error> {
+    platform::share_text(window, options)
 }
 
-/// Access to the share APIs.
-pub struct Share<R: Runtime>(AppHandle<R>);
+pub fn share_data<R: Runtime>(window: Window<R>, options: ShareDataOptions) -> Result<(), Error> {
+    platform::share_data(window, options)
+}
 
-impl<R: Runtime> Share<R> {
-  pub fn ping(&self, payload: PingRequest) -> crate::Result<PingResponse> {
-    Ok(PingResponse {
-      value: payload.value,
-    })
-  }
+pub fn share_file<R: Runtime>(window: Window<R>, options: ShareFileOptions) -> Result<(), Error> {
+    platform::share_file(window, options)
+}
+
+pub fn cleanup() -> Result<(), Error> {
+    platform::cleanup()
 }

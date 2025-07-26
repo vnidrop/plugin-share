@@ -1,4 +1,4 @@
-use crate::models::{Error, ShareDataOptions, ShareFileOptions, ShareTextOptions};
+use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use base64::{engine::general_purpose, Engine as _};
 use objc2::{
     rc::{autoreleasepool, Id},
@@ -10,6 +10,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{io::Write, path::Path};
 use tauri::{Runtime, Window};
 use tempfile::{Builder, NamedTempFile};
+use crate::Error;
 
 pub fn share_text<R: Runtime>(
     window: Window<R>,
@@ -77,7 +78,7 @@ fn show_share_sheet<R: Runtime>(
         let ns_view = get_ns_view(&window)?;
 
         autoreleasepool(|_pool| {
-            let picker = unsafe { NSSharingServicePicker::initWithItems(&items) };
+            let picker = unsafe { NSSharingServicePicker::alloc().initWithItems(&items) };
 
             // We need to show the picker relative to a view and a rectangle.
             // We use the window's view and an empty rectangle at its center.

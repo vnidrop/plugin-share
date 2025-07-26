@@ -1,4 +1,4 @@
-use crate::models::{Error, ShareDataOptions, ShareFileOptions, ShareTextOptions};
+use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::ApplicationModel::DataTransfer::DataTransferManager;
@@ -23,6 +23,7 @@ use windows::{
     },
 };
 use windows_core::Interface;
+use crate::Error;
 
 // A helper to map the detailed windows::core::Error into our plugin's simpler error type.
 impl From<windows::core::Error> for Error {
@@ -141,7 +142,7 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                         }
                                         
                                         if!storage_items.is_empty() {
-                                            let _ = data_clone.SetStorageItemsReadOnly(&storage_items);
+                                            let _ = data_clone.SetStorageItemsReadOnly(&storage_items.iter().collect());
                                         }
                                         // Signal that we are done with the async operation.
                                         deferral.Complete()?;
