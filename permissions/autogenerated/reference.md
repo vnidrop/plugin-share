@@ -2,7 +2,7 @@
 
 Default permissions for the plugin
 
-#### This default permission set includes the following
+#### This default permission set includes the following:
 
 - `allow-ping`
 
@@ -13,6 +13,7 @@ Default permissions for the plugin
 <th>Identifier</th>
 <th>Description</th>
 </tr>
+
 
 <tr>
 <td>

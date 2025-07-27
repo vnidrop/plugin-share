@@ -17,14 +17,14 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rollup -c",
-    "prepublishOnly": "pnpm build",
-    "pretest": "pnpm build"
+    "build": "rollup -c"
   },
   "dependencies": {
     "@tauri-apps/api": ">=2.0.0-beta.6"
   },
   "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-typescript": "^12.0.0",
     "rollup": "^4.9.6",
     "typescript": "^5.3.3",

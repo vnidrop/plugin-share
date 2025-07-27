@@ -1,0 +1,88 @@
+# .github/workflows/release.yml
+
+name: "Publish Plugin Packages"
+
+# This workflow is triggered only when a new tag matching the pattern 'v*.*.*' is pushed.
+# This is the standard practice for versioned releases.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  # This job performs a dry run for the Rust crate to ensure it's ready for publishing.
+  publish-crate-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run cargo publish dry-run
+        uses: katyo/publish-crates@v2
+        with:
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          dry-run: true
+
+  # This job performs a dry run for the npm package.
+  # It includes the crucial build step to ensure the JS bindings are generated correctly.
+  publish-npm-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm i
+      # This step is crucial for Tauri plugins. It builds the guest-js bindings.
+      # Ensure you have a "build" script in your package.json.
+      - name: Build the plugin
+        run: pnpm build
+      - name: Run npm publish dry-run
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          dry-run: true
+
+  # This job publishes the Rust crate to crates.io.
+  # It only runs if both dry-run jobs succeed.
+  publish-crate:
+    needs: [publish-crate-dry-run, publish-npm-dry-run]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Publish to crates.io
+        uses: katyo/publish-crates@v2
+        with:
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # This job publishes the npm package to the npm registry.
+  # It only runs if both dry-run jobs succeed.
+  publish-npm:
+    needs: [publish-crate-dry-run, publish-npm-dry-run]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm i
+      - name: Build the plugin
+        run: pnpm build
+      - name: Publish to npm
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
