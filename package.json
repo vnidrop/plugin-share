@@ -1,8 +1,8 @@
 {
-  "name": "tauri-plugin-share-api",
+  "name": "@vnidrop/tauri-plugin-share",
   "version": "0.1.0",
-  "author": "You",
-  "description": "",
+  "author": "AbassHammed",
+  "description": "A Tauri plugin for sharing content via the system's share dialog.",
   "type": "module",
   "types": "./dist-js/index.d.ts",
   "main": "./dist-js/index.cjs",

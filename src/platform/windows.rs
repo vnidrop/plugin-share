@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use tauri::{Runtime, Window};
 use tempfile::{Builder, NamedTempFile};
 use windows::{
-    core::{HSTRING},
+    core::{HSTRING, Interface},
     Foundation::{TypedEventHandler},
     Storage::StorageFile,
     Win32::{
@@ -23,7 +23,7 @@ use windows::{
         },
     },
 };
-use windows_core::Interface;
+use windows_collections::IIterable;
 use crate::Error;
 
 // A helper to map the detailed windows::core::Error into our plugin's simpler error type.
@@ -141,7 +141,18 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                         }
                                         
                                         if !storage_items.is_empty() {
-                                            let _ = data_clone.SetStorageItemsReadOnly(storage_items)?;
+                                            let iterable_items: Result<IIterable<IStorageItem>, _> = storage_items.try_into();
+
+                                            match iterable_items {
+                                                Ok(items) => {
+                                                    if let Err(e) = data_clone.SetStorageItemsReadOnly(&items) {
+                                                        log::error!("Failed to set storage items on data package: {}", e);
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    log::error!("Failed to convert Vec to IIterable: {}", e);
+                                                }
+                                            }
                                         }
                                         // Signal that we are done with the async operation.
                                         deferral.Complete()?;
