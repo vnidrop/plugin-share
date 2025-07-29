@@ -8,13 +8,9 @@ on:
 
 jobs:
   publish-crate-dry-run:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y webkit2gtk-4.1 libxdo-dev libayatana-appindicator3-dev
       - name: Set up Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -27,7 +23,7 @@ jobs:
           dry-run: true
 
   publish-npm-dry-run:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js and pnpm
@@ -47,7 +43,7 @@ jobs:
 
   publish-crate:
     needs: [publish-crate-dry-run, publish-npm-dry-run]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
@@ -66,7 +62,7 @@ jobs:
 
   publish-npm:
     needs: [publish-crate-dry-run, publish-npm-dry-run]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js and pnpm
