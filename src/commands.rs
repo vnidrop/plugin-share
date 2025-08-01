@@ -30,6 +30,6 @@ pub async fn share_file<R: Runtime>(
 }
 
 #[command]
-async fn cleanup<R: Runtime>(app: AppHandle<R>) -> Result<(), error::Error> {
+pub async fn cleanup<R: Runtime>(app: AppHandle<R>) -> Result<(), error::Error> {
     app.share().cleanup()
 }

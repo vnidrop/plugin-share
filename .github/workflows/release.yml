@@ -8,7 +8,7 @@ on:
 
 jobs:
   publish-crate-dry-run:
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust toolchain
@@ -23,7 +23,7 @@ jobs:
           dry-run: true
 
   publish-npm-dry-run:
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js and pnpm
@@ -43,7 +43,7 @@ jobs:
 
   publish-crate:
     needs: [publish-crate-dry-run, publish-npm-dry-run]
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust toolchain
@@ -58,7 +58,7 @@ jobs:
 
   publish-npm:
     needs: [publish-crate-dry-run, publish-npm-dry-run]
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js and pnpm

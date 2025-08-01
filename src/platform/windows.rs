@@ -88,12 +88,13 @@ enum SharePayload {
 /// It ensures all UI operations are run on the main thread.
 fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
+    let win_clone = window.clone();
     
     window
         .run_on_main_thread(move || {
             let result = (|| -> Result<(), Error> {
                 initialize_winrt_thread()?;
-                let hwnd = get_hwnd(&window)?;
+                let hwnd = get_hwnd(&win_clone)?;
                 let dtm = get_data_transfer_manager(hwnd)?;
 
                 let data_requested_handler =
@@ -141,7 +142,8 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                         }
                                         
                                         if !storage_items.is_empty() {
-                                            let iterable_items: Result<IIterable<IStorageItem>, _> = storage_items.try_into();
+                                            let option_items: Vec<Option<IStorageItem>> = storage_items.into_iter().map(Some).collect();
+                                            let iterable_items: Result<IIterable<IStorageItem>, _> = option_items.try_into();
 
                                             match iterable_items {
                                                 Ok(items) => {

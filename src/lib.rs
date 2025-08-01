@@ -40,6 +40,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::share_text,
       commands::share_data,
       commands::share_file,
+      commands::cleanup,
       ])
     .setup(|app, api| {
       #[cfg(mobile)]
