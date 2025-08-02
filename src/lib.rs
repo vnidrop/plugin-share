@@ -35,7 +35,7 @@ impl<R: Runtime, T: Manager<R>> crate::ShareExt<R> for T {
 
 /// Initializes the plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
-  Builder::new("share")
+  Builder::new("vnidrop-share")
     .invoke_handler(tauri::generate_handler![
       commands::share_text,
       commands::share_data,

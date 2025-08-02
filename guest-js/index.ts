@@ -62,7 +62,7 @@ export interface ShareFileOptions {
  *
  * @example
  * ```typescript
- * import { shareText } from 'tauri-plugin-share-api';
+ * import { shareText } from '@vnidrop/tauri-plugin-share';
  *
  * await shareText({
  * title: 'Share this URL',
@@ -71,7 +71,7 @@ export interface ShareFileOptions {
  * ```
  */
 export async function shareText(options: ShareTextOptions): Promise<void> {
-  await invoke("plugin:share|share_text", { options });
+  await invoke("plugin:vnidrop-share|share_text", { options });
 }
 
 /**
@@ -83,7 +83,7 @@ export async function shareText(options: ShareTextOptions): Promise<void> {
  *
  * @example
  * ```typescript
- * import { shareData } from 'tauri-plugin-share-api';
+ * import { shareData } from '@vnidrop/tauri-plugin-share';
  *
  * // Example: Sharing a simple text file created from a Base64 string.
  * const base64Data = btoa('Hello from Tauri!'); // "SGVsbG8gZnJvbSBUYXVyaSE="
@@ -96,7 +96,7 @@ export async function shareText(options: ShareTextOptions): Promise<void> {
  * ```
  */
 export async function shareData(options: ShareDataOptions): Promise<void> {
-  await invoke("plugin:share|share_data", { options });
+  await invoke("plugin:vnidrop-share|share_data", { options });
 }
 
 /**
@@ -107,7 +107,7 @@ export async function shareData(options: ShareDataOptions): Promise<void> {
  *
  * @example
  * ```typescript
- * import { shareFile } from 'tauri-plugin-share-api';
+ * import { shareFile } from '@vnidrop/tauri-plugin-share';
  * import { join } from '@tauri-apps/api/path';
  * import { appDataDir } from '@tauri-apps/api/path';
  *
@@ -121,7 +121,7 @@ export async function shareData(options: ShareDataOptions): Promise<void> {
  * ```
  */
 export async function shareFile(options: ShareFileOptions): Promise<void> {
-  await invoke("plugin:share|share_file", { options });
+  await invoke("plugin:vnidrop-share|share_file", { options });
 }
 
 /**
@@ -134,12 +134,12 @@ export async function shareFile(options: ShareFileOptions): Promise<void> {
  *
  * @example
  * ```typescript
- * import { cleanup } from 'tauri-plugin-share-api';
+ * import { cleanup } from '@vnidrop/tauri-plugin-share';
  *
  * // Call on app startup or when you want to ensure no temp files are left.
  * await cleanup();
  * ```
  */
 export async function cleanup(): Promise<void> {
-  await invoke("plugin:share|cleanup");
+  await invoke("plugin:vnidrop-share|cleanup");
 }
