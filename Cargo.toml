@@ -24,6 +24,7 @@ raw-window-handle = "0.6.2"
 objc2-app-kit = "0.3.1"
 objc2 = "0.6.1"
 objc2-foundation = "0.3.1"
+objc2-core-foundation = {version = "0.3.1", features = ["CFCGTypes"]}
 
 [target.'cfg(windows)'.dependencies]
 windows-collections = "0.2.0"

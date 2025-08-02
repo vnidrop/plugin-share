@@ -1,5 +1,7 @@
 use serde::{Serialize};
 use thiserror::Error;
+use raw_window_handle::HandleError;
+use std::sync::mpsc::RecvError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -16,6 +18,10 @@ pub enum Error {
     TempFile(String),
     #[error("Tauri API error: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("Failed to receive from channel: {0}")]
+    Recv(#[from] RecvError),
+    #[error("Failed to get window handle: {0}")]
+    Handle(#[from] HandleError),
 }
 
 impl Serialize for Error {
