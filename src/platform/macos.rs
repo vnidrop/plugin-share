@@ -1,13 +1,14 @@
 use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use crate::Error;
 use base64::{engine::general_purpose, Engine as _};
+use objc2::runtime::AnyObject;
 use objc2::{
     rc::{autoreleasepool, Retained},
     runtime::NSObject,
 };
 use objc2_app_kit::{NSSharingServicePicker, NSView};
 use objc2_foundation::{NSArray, NSString, NSURL};
-use objc2_core_foundation::geometry::{CGPoint, CGRect, CGSize};
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{
     io::Write,
@@ -24,9 +25,10 @@ pub fn share_text<R: Runtime>(
     options: ShareTextOptions,
 ) -> Result<(), Error> {
     let text = NSString::from_str(&options.text);
-    let items = unsafe {
-        NSArray::from_slice(&[&text])
-    };
+
+    let objects: &NSObject = &[&*text];
+    let items = NSArray::from_slice(objects);
+   
     show_share_sheet(window, items)
 }
 
@@ -37,11 +39,9 @@ pub fn share_data<R: Runtime>(
     let temp_file = create_temp_file_for_data(&options)?;
     let path_str = temp_file.path().to_string_lossy().to_string();
 
-    // The `NSURL` is immediately used and not stored, ensuring its lifetime is managed correctly
     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path_str)) };
-    let items = unsafe {
-        NSArray::from_slice(&[&url])
-    };
+    let objects: &NSObject = &[&*url];
+    let items= NSArray::from_slice(objects);
 
     // The temporary file will be deleted when `temp_file` goes out of scope
     // after the share sheet is closed.
@@ -61,11 +61,8 @@ pub fn share_file<R: Runtime>(
     }
 
     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&options.path)) };
-    let items = autoreleasepool(|_pool| {
-        // SAFETY: We are creating a file URL from a path provided by the user.
-        // The existence of the file has been checked. The `NSURL` is immediately used.
-        NSArray::from_slice(&[&url])
-    });
+    let objects: &NSObject = &[&*url];
+    let items = NSArray::from_slice(objects);
 
     show_share_sheet(window, items)
 }
@@ -80,7 +77,7 @@ pub fn cleanup() -> Result<(), Error> {
 /// Ensures all UI operations are executed on the main thread and propagates errors correctly.
 fn show_share_sheet<R: Runtime>(
     window: Window<R>,
-    items: NSArray<NSObject>,
+    items: Retained<NSArray<NSObject>>,
 ) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
 
@@ -92,7 +89,7 @@ fn show_share_sheet<R: Runtime>(
 
             autoreleasepool(|_pool| {
                 let alloc_picker = unsafe { NSSharingServicePicker::alloc() };
-                let picker = unsafe { NSSharingServicePicker::initWithItems(alloc_picker, &items)};
+                let picker = unsafe { NSSharingServicePicker::initWithItems(alloc_picker, &*items as &NSArray)};
 
                 let bounds =  ns_view.bounds();
 
@@ -130,19 +127,13 @@ fn show_share_sheet<R: Runtime>(
     Ok(())
 }
 
-/// Retrieves the native `NSView` pointer from the Tauri window, compatible with `raw-window-handle` v0.6.
+/// Retrieves the native `NSView` pointer from the Tauri window, compatible with `raw-window-handle`.
 fn get_ns_view<R: Runtime>(window: &Window<R>) -> Result<Retained<NSView>, Error> {
-    // `window.window_handle()` returns a `Result<WindowHandle<'_>, _>`.
-    // The `WindowHandle` is a lifetime-bound guard that ensures the handle is valid.
     let window_handle: WindowHandle<'_> = window.window_handle()?;
     
     if let RawWindowHandle::AppKit(handle) = window_handle.as_raw() {
-        // `handle.ns_view` is a `NonNull<c_void>`, guaranteeing it's not null.
         let ns_view_ptr = handle.ns_view.as_ptr();
         
-        // SAFETY: The `raw-window-handle` crate's safety contract guarantees that for the lifetime
-        // of the `WindowHandle` guard, this is a valid pointer to an `NSView`. We `retain` it to
-        // create a new `Id<NSView>`, which is an owned reference that we can safely use.
         let ns_view: Retained<NSView> = unsafe { Retained::retain(ns_view_ptr.cast()) }.unwrap();
         Ok(ns_view)
     } else {
@@ -167,7 +158,6 @@ fn create_temp_file_for_data(options: &ShareDataOptions) -> Result<NamedTempFile
 
     let temp_dir = std::env::temp_dir();
 
-    // Use `tempfile` for secure and unique temporary file creation.
     let mut temp_file = Builder::new()
        .prefix(&format!("{}-", uuid::Uuid::new_v4()))
        .suffix(&format!("-{}", sanitized_name))
