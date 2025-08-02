@@ -6,7 +6,7 @@ use objc2::{
     runtime::NSObject,
 };
 use objc2_app_kit::{NSSharingServicePicker, NSView};
-use objc2_foundation::{NSArray, NSRect, NSString, NSURL};
+use objc2_foundation::{NSArray, NSString, NSURL};
 use objc2_core_foundation::geometry::{CGPoint, CGRect, CGSize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{
@@ -25,7 +25,7 @@ pub fn share_text<R: Runtime>(
 ) -> Result<(), Error> {
     let text = NSString::from_str(&options.text);
     let items = unsafe {
-        NSArray::from_slice(&[text])
+        NSArray::from_slice(&[&text])
     };
     show_share_sheet(window, items)
 }
@@ -40,7 +40,7 @@ pub fn share_data<R: Runtime>(
     // The `NSURL` is immediately used and not stored, ensuring its lifetime is managed correctly
     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path_str)) };
     let items = unsafe {
-        NSArray::from_slice(&[url])
+        NSArray::from_slice(&[&url])
     };
 
     // The temporary file will be deleted when `temp_file` goes out of scope
@@ -64,7 +64,7 @@ pub fn share_file<R: Runtime>(
     let items = autoreleasepool(|_pool| {
         // SAFETY: We are creating a file URL from a path provided by the user.
         // The existence of the file has been checked. The `NSURL` is immediately used.
-        NSArray::from_slice(&[url])
+        NSArray::from_slice(&[&url])
     });
 
     show_share_sheet(window, items)
@@ -80,7 +80,7 @@ pub fn cleanup() -> Result<(), Error> {
 /// Ensures all UI operations are executed on the main thread and propagates errors correctly.
 fn show_share_sheet<R: Runtime>(
     window: Window<R>,
-    items: Retained<NSArray<NSObject>>,
+    items: NSArray<NSObject>,
 ) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
 
