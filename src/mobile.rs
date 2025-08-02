@@ -1,10 +1,10 @@
 use serde::de::DeserializeOwned;
 use tauri::{
   plugin::{PluginApi, PluginHandle},
-  AppHandle, Runtime,
+  AppHandle, Runtime, Window,
 };
 
-use crate::models::*;
+use crate::{models::*, Error};
 
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "plugin.vnidrop.share";
@@ -19,7 +19,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 ) -> crate::Result<Share<R>> {
    #[cfg(target_os = "android")]
     let handle = api
-        .register_android_plugin(PLUGIN_IDENTIFIER, "SharePlugin")?;
+        .register_android_plugin(PLUGIN_IDENTIFIER, "SharePlugin").unwrap();
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_share)?;
   Ok(Share(handle))
@@ -29,25 +29,25 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Share<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Share<R> {
-    pub fn share_text(&self, _window: Window<R>, payload: ShareTextOptions) -> Result<()> {
+    pub fn share_text(&self, _window: Window<R>, payload: ShareTextOptions) -> Result<(), Error> {
         self.0
             .run_mobile_plugin("shareText", payload)
             .map_err(Into::into)
     }
 
-    pub fn share_data(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<()> {
+    pub fn share_data(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<(), Error> {
           self.0
               .run_mobile_plugin("shareData", payload)
               .map_err(Into::into)
     }
 
-    pub fn share_file(&self, _window: Window<R>, payload: ShareFileOptions) -> Result<()> {
+    pub fn share_file(&self, _window: Window<R>, payload: ShareFileOptions) -> Result<(), Error> {
         self.0
             .run_mobile_plugin("shareFile", payload)
             .map_err(Into::into)
     }
 
-    pub fn cleanup(&self) -> Result<()> {
+    pub fn cleanup(&self) -> Result<(), Error> {
         self.0
             .run_mobile_plugin("cleanup", ())
             .map_err(Into::into)

@@ -95,7 +95,7 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
             let result = (|| -> Result<(), Error> {
                 initialize_winrt_thread()?;
                 let hwnd = get_hwnd(&win_clone)?;
-                let dtm = get_data_transfer_manager(hwnd)?;
+                let (dtm, interop) = get_data_transfer_manager(hwnd)?;
 
                 let data_requested_handler =
                     TypedEventHandler::new(move |_, args: windows::core::Ref<'_, windows::ApplicationModel::DataTransfer::DataRequestedEventArgs>| -> windows::core::Result<()> {
@@ -167,7 +167,7 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                     });
 
                 let token = dtm.DataRequested(&data_requested_handler)?;
-                DataTransferManager::ShowShareUI()?;
+                unsafe { interop.ShowShareUIForWindow( hwnd) }?;
                 dtm.RemoveDataRequested(token)?;
 
                 Ok(())
@@ -205,11 +205,11 @@ fn get_hwnd<R: Runtime>(window: &Window<R>) -> Result<HWND, Error> {
 
 /// Gets an instance of the DataTransferManager associated with the window's HWND.
 /// This is the required method for desktop (non-UWP) applications. [1]
-fn get_data_transfer_manager(hwnd: HWND) -> Result<DataTransferManager, Error> {
+fn get_data_transfer_manager(hwnd: HWND) -> Result<(DataTransferManager, IDataTransferManagerInterop), Error> {
     let interop = 
         windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()?;
     let dtm = unsafe { interop.GetForWindow(hwnd) }?;
-    Ok(dtm)
+    Ok((dtm, interop))
 }
 
 /// Returns the path to a dedicated, secure directory for this plugin's temporary files.
