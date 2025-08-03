@@ -47,7 +47,7 @@ pub fn share_text<R: Runtime>(
     options: ShareTextOptions,
 ) -> Result<(), Error> {
     let share_payload = SharePayload::Text(options);
-    show_share_sheet(window, share_payload)
+    show_share_sheet(window, share_payload, None)
 }
 
 pub fn share_data<R: Runtime>(
@@ -68,7 +68,7 @@ pub fn share_data<R: Runtime>(
 
     // The temp_file will be automatically deleted when it goes out of scope
     // after the share sheet is closed.
-    show_share_sheet(window, SharePayload::Files(vec![file_options.path]))
+    show_share_sheet(window, SharePayload::Files(vec![file_options.path]), Some(temp_file))
 }
 
 pub fn share_file<R: Runtime>(
@@ -76,7 +76,7 @@ pub fn share_file<R: Runtime>(
     options: ShareFileOptions,
 ) -> Result<(), Error> {
     // We don't check for file existence to mitigate TOCTOU
-    show_share_sheet(window, SharePayload::Files(vec![options.path]))
+    show_share_sheet(window, SharePayload::Files(vec![options.path]), None)
 }
 
 pub fn cleanup() -> Result<(), Error> {
@@ -95,7 +95,7 @@ enum SharePayload {
 
 /// The main entry point that handles showing the share sheet.
 /// It ensures all UI operations are run on the main thread.
-fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Result<(), Error> {
+fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload, _file_holder: Option<NamedTempFile>) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
     let win_clone = window.clone();
     
@@ -108,6 +108,8 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
 
                 let data_requested_handler =
                     TypedEventHandler::new(move |_, args: windows::core::Ref<'_, DataRequestedEventArgs>| -> windows::core::Result<()> {
+                        println!("Data requested handler called");
+
                         if let Some(request_args) = (*args).as_ref() {
                             let request = request_args.Request()?;
                             let data = request.Data()?;
@@ -115,12 +117,19 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
 
                             match &payload {
                                 SharePayload::Text(options) => {
+                                    println!("Setting text data: {}", options.text);
+
                                     if let Some(title) = &options.title {
                                         properties.SetTitle(&HSTRING::from(title))?;
+                                        println!("Set title: {}", title);
                                     }
                                     data.SetText(&HSTRING::from(&options.text))?;
+                                    println!("Text data set successfully");
                                 }
                                 SharePayload::Files(paths) => {
+                                    println!("Setting file data for {} files", paths.len());
+
+
                                     let deferral = request.GetDeferral()?;
                                     let paths_clone = paths.clone();
                                     let data_clone = data.clone();
@@ -130,9 +139,10 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                         let mut first_error: Option<windows::core::Error> = None;
 
                                         for path in paths_clone {
+                                            println!("Processing file: {}", path);
                                             let op_result = StorageFile::GetFileFromPathAsync(&HSTRING::from(path));
                                             if let Err(e) = op_result {
-                                                log::error!("Failed to create file operation: {}", e);
+                                                println!("Failed to create file operation: {}", e);
                                                 if first_error.is_none() { first_error = Some(e); }
                                                 continue;
                                             }
@@ -144,11 +154,12 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    log::error!("Failed to get file: {}", e);
+                                                    println!("Failed to get file: {}", e);
                                                     if first_error.is_none() { first_error = Some(e); }
                                                 }
                                             }
                                         }
+
                                         
                                         if !storage_items.is_empty() {
                                             let option_items: Vec<Option<IStorageItem>> = storage_items.into_iter().map(Some).collect();
@@ -157,11 +168,11 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                             match iterable_items {
                                                 Ok(items) => {
                                                     if let Err(e) = data_clone.SetStorageItemsReadOnly(&items) {
-                                                        log::error!("Failed to set storage items on data package: {}", e);
+                                                        println!("Failed to set storage items on data package: {}", e);
                                                     }
                                                 },
                                                 Err(e) => {
-                                                    log::error!("Failed to convert Vec to IIterable: {}", e);
+                                                    println!("Failed to convert Vec to IIterable: {}", e);
                                                 }
                                             }
                                         }
@@ -195,7 +206,7 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                     // However, for a modal UI, this is generally safe.
                     *state.borrow_mut() = Some((dtm, token));
                 });
-                
+
                 unsafe { interop.ShowShareUIForWindow( hwnd) }?;
 
                 Ok(())
