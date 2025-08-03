@@ -1,8 +1,9 @@
 use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::ApplicationModel::DataTransfer::DataTransferManager;
+use windows::ApplicationModel::DataTransfer::{DataTransferManager, DataRequestedEventArgs};
 use windows::Storage::IStorageItem;
+use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -25,6 +26,14 @@ use windows::{
 };
 use windows_collections::IIterable;
 use crate::Error;
+
+// This thread-local static variable is the key to solving the lifetime issue.
+// It will hold the DataTransferManager and its event registration token, keeping them
+// alive for the duration of the asynchronous share operation. It's only accessible
+// on the main thread, which is safe for these non-thread-safe WinRT types.
+thread_local! {
+    static SHARE_STATE: RefCell<Option<(DataTransferManager, i64)>> = RefCell::new(None);
+}
 
 // A helper to map the detailed windows::core::Error into our plugin's simpler error type.
 impl From<windows::core::Error> for Error {
@@ -98,7 +107,7 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                 let (dtm, interop) = get_data_transfer_manager(hwnd)?;
 
                 let data_requested_handler =
-                    TypedEventHandler::new(move |_, args: windows::core::Ref<'_, windows::ApplicationModel::DataTransfer::DataRequestedEventArgs>| -> windows::core::Result<()> {
+                    TypedEventHandler::new(move |_, args: windows::core::Ref<'_, DataRequestedEventArgs>| -> windows::core::Result<()> {
                         if let Some(request_args) = (*args).as_ref() {
                             let request = request_args.Request()?;
                             let data = request.Data()?;
@@ -163,12 +172,31 @@ fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload) -> Res
                                 }
                             }
                         }
+
+                        // After successfully providing the data, we must clean up the state.
+                        // This unregisters the handler and allows the DataTransferManager to be dropped.
+                        SHARE_STATE.with(|state| {
+                            if let Some((manager, token)) = state.borrow_mut().take() {
+                                let _ = manager.RemoveDataRequested(token);
+                            }
+                        });
+
+
                         Ok(())
                     });
 
                 let token = dtm.DataRequested(&data_requested_handler)?;
+
+                // Store the manager and token in our thread-local state. This is the crucial
+                // step that keeps them alive until the handler is called and cleans up.
+                SHARE_STATE.with(|state| {
+                    // If a previous operation failed to clean up, this will overwrite it.
+                    // A more robust solution for concurrent calls would need a more complex state manager.
+                    // However, for a modal UI, this is generally safe.
+                    *state.borrow_mut() = Some((dtm, token));
+                });
+                
                 unsafe { interop.ShowShareUIForWindow( hwnd) }?;
-                dtm.RemoveDataRequested(token)?;
 
                 Ok(())
             })();
