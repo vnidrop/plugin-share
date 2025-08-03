@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Runtime, Window};
 use tauri::plugin::PluginApi;
-use crate::{models::*, error::Error};
+use crate::{models::*, Result};
 
 use crate::platform;
 
@@ -8,19 +8,19 @@ pub struct Share<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Share<R> {
 
-  pub fn share_text(&self, window: Window<R>, options: ShareTextOptions) -> Result<(), Error> {
+  pub fn share_text(&self, window: Window<R>, options: ShareTextOptions) -> Result<()> {
       platform::share_text(window, options)
   }
 
-  pub fn share_data(&self, window: Window<R>, options: ShareDataOptions) -> Result<(), Error> {
+  pub fn share_data(&self, window: Window<R>, options: ShareDataOptions) -> Result<()> {
       platform::share_data(window, options)
   }
 
-  pub fn share_file(&self, window: Window<R>, options: ShareFileOptions) -> Result<(), Error> {
+  pub fn share_file(&self, window: Window<R>, options: ShareFileOptions) -> Result<()> {
       platform::share_file(window, options)
   }
 
-  pub fn cleanup(&self) -> Result<(), Error> {
+  pub fn cleanup(&self) -> Result<()> {
       platform::cleanup()
   }
 }

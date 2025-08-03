@@ -22,6 +22,11 @@ pub enum Error {
     Recv(#[from] RecvError),
     #[error("Failed to get window handle: {0}")]
     Handle(#[from] HandleError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[cfg(mobile)]
+    #[error(transparent)]
+    PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
 }
 
 impl Serialize for Error {

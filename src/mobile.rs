@@ -4,7 +4,7 @@ use tauri::{
   AppHandle, Runtime, Window,
 };
 
-use crate::{models::*, Error};
+use crate::{models::*, Result};
 
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "plugin.vnidrop.share";
@@ -29,25 +29,25 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Share<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Share<R> {
-    pub fn share_text(&self, _window: Window<R>, payload: ShareTextOptions) -> Result<(), Error> {
+    pub fn share_text(&self, _window: Window<R>, payload: ShareTextOptions) -> Result<()> {
         self.0
             .run_mobile_plugin("shareText", payload)
             .map_err(Into::into)
     }
 
-    pub fn share_data(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<(), Error> {
+    pub fn share_data(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<()> {
           self.0
               .run_mobile_plugin("shareData", payload)
               .map_err(Into::into)
     }
 
-    pub fn share_file(&self, _window: Window<R>, payload: ShareFileOptions) -> Result<(), Error> {
+    pub fn share_file(&self, _window: Window<R>, payload: ShareFileOptions) -> Result<()> {
         self.0
             .run_mobile_plugin("shareFile", payload)
             .map_err(Into::into)
     }
 
-    pub fn cleanup(&self) -> Result<(), Error> {
+    pub fn cleanup(&self) -> Result<()> {
         self.0
             .run_mobile_plugin("cleanup", ())
             .map_err(Into::into)
