@@ -1,12 +1,12 @@
 ## Default Permission
 
-Default permissions for the plugin
+Default permissions for the Vnidrop Plugin, all commands can be invoked by default.
 
 #### This default permission set includes the following:
 
-- `allow-share-data`
-- `allow-share-text`
-- `allow-share-file`
+- `allow-share`
+- `allow-can-share`
+- `allow-cleanup`
 
 ## Permission Table
 
