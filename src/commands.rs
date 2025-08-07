@@ -15,8 +15,8 @@ pub async fn share<R: Runtime>(
 pub async fn can_share<R: Runtime>(
     app: AppHandle<R>, 
     window: Window<R>,
-) -> Result<(), error::Error> {
-    app.share().can_share(window)
+) -> Result<models::CanShareResult, error::Error> {
+    app.share().can_share()
 }
 
 #[command]

@@ -8,17 +8,17 @@ pub struct Share<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Share<R> {
 
-  pub fn share(&self, window: Window<R>, options: ShareOptions) -> Result<()> {
-      platform::share(window, options)
-  }
-
-    pub fn can_share(&self, window: Window<R>) -> Result<()> {
-        platform::can_share(window)
+    pub fn share(&self, window: Window<R>, options: ShareOptions) -> Result<()> {
+        platform::share(window, options)
     }
 
-  pub fn cleanup(&self) -> Result<()> {
-      platform::cleanup()
-  }
+    pub fn can_share(&self) -> Result<CanShareResult> {
+        platform::can_share()
+    }
+
+    pub fn cleanup(&self) -> Result<()> {
+        platform::cleanup()
+    }
 }
 
 pub fn init<R: Runtime, C: serde::de::DeserializeOwned>(

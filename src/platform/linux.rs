@@ -1,30 +1,20 @@
 use tauri::{Runtime, Window};
 
-use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
+use crate::models::{ShareOptions, CanShareResult};
 use crate::Error;
 
-pub fn share_text<R: Runtime>(
+pub fn share<R: Runtime>(
     _window: Window<R>,
-    _options: ShareTextOptions,
+    _options: ShareOptions,
 ) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn share_data<R: Runtime>(
-    _window: Window<R>,
-    _options: ShareDataOptions,
-) -> Result<(), Error> {
-    Ok(())
+pub fn can_share<R: Runtime>() -> Result<CanShareResult, Error> {
+    Ok(CanShareResult { value: false })
 }
 
-pub fn share_file<R: Runtime>(
-    _window: Window<R>,
-    _options: ShareFileOptions,
-) -> Result<(), Error> {
-    Ok(())
-}
 
 pub fn cleanup() -> Result<(), Error> {
-    
     Ok(())
 }
