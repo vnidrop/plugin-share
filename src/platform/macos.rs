@@ -20,7 +20,7 @@ pub fn cleanup() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn can_share<R: Runtime>() -> Result<CanShareResult, Error> {
+pub fn can_share() -> Result<CanShareResult, Error> {
     // On macOS, we can always share as long as the sharing service is available.
     Ok(CanShareResult { value: true })
 }

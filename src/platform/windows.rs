@@ -50,7 +50,7 @@ pub fn cleanup() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn can_share<R: Runtime>() -> Result<CanShareResult, Error> {
+pub fn can_share() -> Result<CanShareResult, Error> {
     Ok(CanShareResult { value: true })
 }
 
