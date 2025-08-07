@@ -34,7 +34,7 @@ class ShareFileByDataOptions {
 
 @InvokeArg
 class ShareFileByContentUriOptions {
-    lateinit var uri: String // The content:// URI string
+    lateinit var path: String 
     var title: String? = null
 }
 
@@ -97,7 +97,7 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
     fun shareFile(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(ShareFileByContentUriOptions::class.java)
-            val contentUri = Uri.parse(args.uri)
+            val contentUri = Uri.parse(args.path)
             val contentResolver = activity.contentResolver
 
             val fileName = getFileNameFromUri(contentResolver, contentUri)

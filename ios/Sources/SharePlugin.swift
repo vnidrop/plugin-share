@@ -117,7 +117,7 @@ public class SharePlugin: Plugin {
             let activityViewController = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
             
             // This is the crucial part for reliability. This block is guaranteed to be called
-            // when the share sheet is dismissed, regardless of the outcome. [1, 2, 3]
+            // when the share sheet is dismissed, regardless of the outcome.
             activityViewController.completionWithItemsHandler = { (activityType, completed, returnedItems, error) in
                 // Perform the cleanup task (like deleting a temp file) if one was provided.
                 cleanup?()
@@ -171,7 +171,7 @@ public class SharePlugin: Plugin {
     private func createSafeTempFile(for untrustedFileName: String) throws -> URL {
         let safeDir = try getSafeShareDir()
         
-        // Sanitize the filename to remove any path components, preventing traversal. [4, 5]
+        // Sanitize the filename to remove any path components, preventing traversal.
         let sanitizedBaseName = URL(fileURLWithPath: untrustedFileName).lastPathComponent
         
         // Prepending a UUID guarantees uniqueness and prevents name collisions.
