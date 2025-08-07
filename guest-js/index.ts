@@ -1,145 +1,81 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Defines the options for sharing plain text.
+ * The data to be shared, mirroring the Web Share API's ShareData dictionary.
  */
-export interface ShareTextOptions {
-  /**
-   * The text to be shared.
-   * This can be a simple string, a URL, or any other text content.
-   */
-  text: string;
-  /**
-   * The title for the share dialog.
-   * This is an optional hint for the share sheet, primarily used on Android and Windows.
-   */
+export interface ShareData {
+  /** An array of File objects to be shared. */
+  files?: File[];
+  /** The text content to be shared. */
+  text?: string;
+  /** A title for the content being shared. */
   title?: string;
+  /** A URL to be shared. */
+  url?: string;
 }
 
 /**
- * Defines the options for sharing a file from Base64 encoded data.
- * This is useful for sharing dynamically generated content without writing it to a permanent file first.
+ * Checks if the sharing API is available and if the given data can be shared.
+ * On mobile, this will almost always resolve to true, but it's good practice
+ * for feature detection and platform consistency.
+ * @param data The data to test for shareability.
+ * @returns A promise that resolves with a boolean indicating if sharing is possible.
  */
-export interface ShareDataOptions {
-  /**
-   * The file content, encoded as a Base64 string.
-   * Do not include the data URL prefix (e.g., 'data:image/png;base64,').
-   */
-  data: string;
-  /**
-   * The name of the file, including its extension (e.g., 'document.pdf', 'image.png').
-   * This name will be suggested in the share dialog.
-   */
-  name: string;
-  /**
-   * The title for the share dialog.
-   * This is an optional hint for the share sheet, primarily used on Android and Windows.
-   */
-  title?: string;
-}
-
-/**
- * Defines the options for sharing a file from the local filesystem.
- */
-export interface ShareFileOptions {
-  /**
-   * The absolute path to the file on the local filesystem.
-   * On mobile, this should be a content URI if sharing from an external source.
-   */
-  path: string;
-  /**
-   * The title for the share dialog.
-   * This is an optional hint for the share sheet, primarily used on Android and Windows.
-   */
-  title?: string;
-}
-
-/**
- * Opens the native system share dialog to share plain text.
- *
- * @param options The options for sharing text.
- * @returns A promise that resolves when the share dialog is closed.
- *
- * @example
- * ```typescript
- * import { shareText } from '@vnidrop/tauri-plugin-share';
- *
- * await shareText({
- * title: 'Share this URL',
- * text: '[https://tauri.app](https://tauri.app)'
- * });
- * ```
- */
-export async function shareText(options: ShareTextOptions): Promise<void> {
-  await invoke("plugin:vnidrop-share|share_text", { options });
-}
-
-/**
- * Opens the native system share dialog to share a file from Base64 data.
- * The plugin handles creating a temporary file and cleaning it up automatically.
- *
- * @param options The options for sharing data.
- * @returns A promise that resolves when the share dialog is closed.
- *
- * @example
- * ```typescript
- * import { shareData } from '@vnidrop/tauri-plugin-share';
- *
- * // Example: Sharing a simple text file created from a Base64 string.
- * const base64Data = btoa('Hello from Tauri!'); // "SGVsbG8gZnJvbSBUYXVyaSE="
- *
- * await shareData({
- * title: 'Share my file',
- * name: 'greeting.txt',
- * data: base64Data
- * });
- * ```
- */
-export async function shareData(options: ShareDataOptions): Promise<void> {
-  await invoke("plugin:vnidrop-share|share_data", { options });
-}
-
-/**
- * Opens the native system share dialog to share a file from the local filesystem.
- *
- * @param options The options for sharing a file.
- * @returns A promise that resolves when the share dialog is closed.
- *
- * @example
- * ```typescript
- * import { shareFile } from '@vnidrop/tauri-plugin-share';
- * import { join } from '@tauri-apps/api/path';
- * import { appDataDir } from '@tauri-apps/api/path';
- *
- * // Note: You must have permissions to access this file path.
- * const filePath = await join(await appDataDir(), 'my-app-file.log');
- *
- * await shareFile({
- * title: 'Share App Log',
- * path: filePath
- * });
- * ```
- */
-export async function shareFile(options: ShareFileOptions): Promise<void> {
-  await invoke("plugin:vnidrop-share|share_file", { options });
+export async function canShare(data?: ShareData): Promise<boolean> {
+  // On mobile, the native share sheet is always available.
+  // We can add more sophisticated checks here if needed in the future.
+  // For now, we confirm the plugin is available.
+  const result = (await invoke("plugin:vnidrop-share|can_share")) as {
+    value: boolean;
+  };
+  return result.value === true;
 }
 
 /**
  * Manually triggers the cleanup of any temporary files created by the plugin.
  *
- * While the plugin attempts to clean up automatically, this function can be called
- * as a failsafe, for example, on application startup.
- *
  * @returns A promise that resolves when the cleanup operation is complete.
- *
- * @example
- * ```typescript
- * import { cleanup } from '@vnidrop/tauri-plugin-share';
- *
- * // Call on app startup or when you want to ensure no temp files are left.
- * await cleanup();
- * ```
  */
 export async function cleanup(): Promise<void> {
   await invoke("plugin:vnidrop-share|cleanup");
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      // The result includes the data URL prefix (e.g., "data:image/png;base64,"),
+      // which we will strip off to send only the raw Base64.
+      const base64String = (reader.result as string).split(",")[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+}
+
+/**
+ * Opens the native system share dialog to share content.
+ *
+ * @param data The content to share, including text, URLs, and/or files.
+ * @returns A promise that resolves when the share dialog is closed.
+ */
+export async function share(data: ShareData): Promise<void> {
+  const payload: any = {
+    text: data.text,
+    title: data.title,
+    url: data.url,
+  };
+
+  if (data.files && data.files.length > 0) {
+    payload.files = await Promise.all(
+      data.files.map(async (file) => ({
+        data: await fileToBase64(file),
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+      }))
+    );
+  }
+
+  await invoke("plugin:vnidrop-share|share", { options: payload });
 }

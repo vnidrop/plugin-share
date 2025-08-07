@@ -1,4 +1,3 @@
-use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::ApplicationModel::DataTransfer::{DataTransferManager, DataRequestedEventArgs};
@@ -25,7 +24,7 @@ use windows::{
     },
 };
 use windows_collections::IIterable;
-use crate::Error;
+use crate::{Error, SharedFile, ShareOptions, CanShareResult};
 
 // This thread-local static variable is the key to solving the lifetime issue.
 // It will hold the DataTransferManager and its event registration token, keeping them
@@ -42,43 +41,6 @@ impl From<windows::core::Error> for Error {
     }
 }
 
-pub fn share_text<R: Runtime>(
-    window: Window<R>,
-    options: ShareTextOptions,
-) -> Result<(), Error> {
-    let share_payload = SharePayload::Text(options);
-    show_share_sheet(window, share_payload, None)
-}
-
-pub fn share_data<R: Runtime>(
-    window: Window<R>,
-    options: ShareDataOptions,
-) -> Result<(), Error> {
-    let temp_file = create_temp_file_for_data(&options)?;
-    let file_path = temp_file
-       .path()
-       .to_str()
-       .ok_or_else(|| Error::TempFile("Invalid temporary file path".to_string()))?
-       .to_string();
-
-    let file_options = ShareFileOptions {
-        path: file_path,
-        title: options.title,
-    };
-
-    // The temp_file will be automatically deleted when it goes out of scope
-    // after the share sheet is closed.
-    show_share_sheet(window, SharePayload::Files(vec![file_options.path]), Some(temp_file))
-}
-
-pub fn share_file<R: Runtime>(
-    window: Window<R>,
-    options: ShareFileOptions,
-) -> Result<(), Error> {
-    // We don't check for file existence to mitigate TOCTOU
-    show_share_sheet(window, SharePayload::Files(vec![options.path]), None)
-}
-
 pub fn cleanup() -> Result<(), Error> {
     let temp_dir = get_plugin_temp_dir()?;
     if temp_dir.exists() {
@@ -88,133 +50,119 @@ pub fn cleanup() -> Result<(), Error> {
     Ok(())
 }
 
-enum SharePayload {
-    Text(ShareTextOptions),
-    Files(Vec<String>),
+pub fn can_share() -> Result<CanShareResult, Error> {
+    Ok(CanShareResult { value: true })
 }
 
-/// The main entry point that handles showing the share sheet.
-/// It ensures all UI operations are run on the main thread.
-fn show_share_sheet<R: Runtime>(window: Window<R>, payload: SharePayload, _file_holder: Option<NamedTempFile>) -> Result<(), Error> {
+
+pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
     let win_clone = window.clone();
     
-    window
-        .run_on_main_thread(move || {
-            let result = (|| -> Result<(), Error> {
-                initialize_winrt_thread()?;
-                let hwnd = get_hwnd(&win_clone)?;
-                let (dtm, interop) = get_data_transfer_manager(hwnd)?;
+    window.run_on_main_thread(move | | {
+        let options_arc = std::sync::Arc::new(options.clone());
+        let result = (|| -> Result<(), Error> {
+            initialize_winrt_thread()?;
+            let hwnd = get_hwnd(&win_clone)?;
+            let (dtm, interop) = get_data_transfer_manager(hwnd)?;
 
-                let data_requested_handler =
-                    TypedEventHandler::new(move |_, args: windows::core::Ref<'_, DataRequestedEventArgs>| -> windows::core::Result<()> {
-                        println!("Data requested handler called");
+            let data_requested_handler = TypedEventHandler::new({
+                let options_clone = options_arc.clone();
+                move |_, args: windows::core::Ref<'_, DataRequestedEventArgs>| -> windows::core::Result<()> {
+                    if let Some(request_args) = (*args).as_ref() {
+                        let request = request_args.Request()?;
+                        let data = request.Data()?;
+                        let properties = data.Properties()?;
 
-                        if let Some(request_args) = (*args).as_ref() {
-                            let request = request_args.Request()?;
-                            let data = request.Data()?;
-                            let properties = data.Properties()?;
-
-                            match &payload {
-                                SharePayload::Text(options) => {
-                                    println!("Setting text data: {}", options.text);
-
-                                    if let Some(title) = &options.title {
-                                        properties.SetTitle(&HSTRING::from(title))?;
-                                        println!("Set title: {}", title);
-                                    }
-                                    data.SetText(&HSTRING::from(&options.text))?;
-                                    println!("Text data set successfully");
-                                }
-                                SharePayload::Files(paths) => {
-                                    println!("Setting file data for {} files", paths.len());
-
-
-                                    let deferral = request.GetDeferral()?;
-                                    let paths_clone = paths.clone();
-                                    let data_clone = data.clone();
-
-                                    tauri::async_runtime::spawn(async move {
-                                        let mut storage_items: Vec<windows::Storage::IStorageItem> = Vec::new();
-                                        let mut first_error: Option<windows::core::Error> = None;
-
-                                        for path in paths_clone {
-                                            println!("Processing file: {}", path);
-                                            let op_result = StorageFile::GetFileFromPathAsync(&HSTRING::from(path));
-                                            if let Err(e) = op_result {
-                                                println!("Failed to create file operation: {}", e);
-                                                if first_error.is_none() { first_error = Some(e); }
-                                                continue;
-                                            }
-                                            
-                                            match op_result.unwrap().get() {
-                                                Ok(file) => {
-                                                    if let Ok(item) = file.cast() {
-                                                        storage_items.push(item);
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    println!("Failed to get file: {}", e);
-                                                    if first_error.is_none() { first_error = Some(e); }
-                                                }
-                                            }
-                                        }
-
-                                        
-                                        if !storage_items.is_empty() {
-                                            let option_items: Vec<Option<IStorageItem>> = storage_items.into_iter().map(Some).collect();
-                                            let iterable_items: Result<IIterable<IStorageItem>, _> = option_items.try_into();
-
-                                            match iterable_items {
-                                                Ok(items) => {
-                                                    if let Err(e) = data_clone.SetStorageItemsReadOnly(&items) {
-                                                        println!("Failed to set storage items on data package: {}", e);
-                                                    }
-                                                },
-                                                Err(e) => {
-                                                    println!("Failed to convert Vec to IIterable: {}", e);
-                                                }
-                                            }
-                                        }
-                                        // Signal that we are done with the async operation.
-                                        deferral.Complete()?;
-                                        Ok::<(), windows::core::Error>(())
-                                    });
-                                }
-                            }
+                        if let Some(title) = &options_clone.title {
+                            properties.SetTitle(&HSTRING::from(title))?;
                         }
 
-                        // After successfully providing the data, we must clean up the state.
-                        // This unregisters the handler and allows the DataTransferManager to be dropped.
+                        let combined_text = match (&options_clone.text, &options_clone.url) {
+                            (Some(t), Some(u)) => format!("{}\n{}", t, u),
+                            (Some(t), None) => t.clone(),
+                            (None, Some(u)) => u.clone(),
+                            (None, None) => String::new(),
+                        };
+
+                        if !combined_text.is_empty() {
+                            data.SetText(&HSTRING::from(combined_text))?;
+                        }
+
+                        if let Some(files) = &options_clone.files {
+                            let deferral = request.GetDeferral()?;
+                            let data_clone = data.clone();
+
+                            tauri::async_runtime::spawn({
+                                let files = files.clone(); // clone to move into async
+                                async move {
+                                    let mut storage_items: Vec<IStorageItem> = Vec::new();
+                                    
+                                    for file in files {
+                                        match create_temp_file_for_data(&file) {
+                                            Ok(temp_file) => {
+                                                let temp_path = temp_file.into_temp_path();
+                                                let path_str = temp_path.to_string_lossy().to_string();
+
+                                                match StorageFile::GetFileFromPathAsync(&HSTRING::from(path_str)) {
+                                                    Ok(op) => match op.get() {
+                                                        Ok(storage_file) => {
+                                                            if let Ok(item) = storage_file.cast() {
+                                                                storage_items.push(item);
+                                                            }
+                                                        }, 
+                                                        Err(e) => eprintln!("Failed to get storage file: {}", e),
+                                                    }, 
+                                                    Err(e) => eprintln!("Failed to get file from path: {}", e),
+                                                }
+                                            },
+                                            Err(e) => eprintln!("Failed to create temp file: {}", e),
+                                        }
+                                    }
+
+                                    if !storage_items.is_empty() {
+                                        let options_items = storage_items.into_iter().map(Some).collect::<Vec<_>>();
+                                        let iterable_items: Result<IIterable<IStorageItem>, _> = options_items.try_into();
+                                        
+                                        match iterable_items {
+                                            Ok(items) => {
+                                                if let Err(e) = data_clone.SetStorageItemsReadOnly(&items) {
+                                                    println!("Failed to set storage items on data package: {}", e);
+                                                }
+                                            },
+                                            Err(e) => {
+                                                println!("Failed to convert Vec to IIterable: {}", e);
+                                            }
+                                        }
+                                    }
+                                    deferral.Complete()?;
+                                    Ok::<(), windows::core::Error>(())
+                                }
+
+                            });
+                        }
+
                         SHARE_STATE.with(|state| {
                             if let Some((manager, token)) = state.borrow_mut().take() {
                                 let _ = manager.RemoveDataRequested(token);
                             }
                         });
+                    }
+                    Ok(())
+                }
+            });
 
-
-                        Ok(())
-                    });
-
-                let token = dtm.DataRequested(&data_requested_handler)?;
-
-                // Store the manager and token in our thread-local state. This is the crucial
-                // step that keeps them alive until the handler is called and cleans up.
-                SHARE_STATE.with(|state| {
-                    // If a previous operation failed to clean up, this will overwrite it.
-                    // A more robust solution for concurrent calls would need a more complex state manager.
-                    // However, for a modal UI, this is generally safe.
-                    *state.borrow_mut() = Some((dtm, token));
-                });
-
-                unsafe { interop.ShowShareUIForWindow( hwnd) }?;
-
-                Ok(())
-            })();
+            let token = dtm.DataRequested(&data_requested_handler)?;
             
-            tx.send(result).ok();
-        })
-        .map_err(|e| Error::NativeApi(e.to_string()))?;
+            SHARE_STATE.with(|state| {
+                *state.borrow_mut() = Some((dtm, token));
+            });
+
+            unsafe { interop.ShowShareUIForWindow(hwnd) }?;
+            Ok(())
+        })();
+        tx.send(result).ok();
+    })?;
 
     rx.recv()
         .map_err(|_| Error::NativeApi("Failed to receive result from main thread".to_string()))?
@@ -262,14 +210,14 @@ fn get_plugin_temp_dir() -> Result<PathBuf, Error> {
 }
 
 /// Creates a secure temporary file from Base64 data.
-fn create_temp_file_for_data(options: &ShareDataOptions) -> Result<NamedTempFile, Error> {
+fn create_temp_file_for_data(file: &SharedFile) -> Result<NamedTempFile, Error> {
     let decoded_bytes = general_purpose::STANDARD
-       .decode(&options.data)
+       .decode(&file.data)
        .map_err(|_| Error::InvalidArgs("Invalid Base64 data provided".to_string()))?;
 
     // Security: Sanitize the filename to prevent path traversal attacks.
     // We only use the filename part and ignore any directory structure.
-    let sanitized_name = Path::new(&options.name)
+    let sanitized_name = Path::new(&file.name)
        .file_name()
        .ok_or_else(|| Error::InvalidArgs("Invalid file name provided".to_string()))?
        .to_str()

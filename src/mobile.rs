@@ -29,22 +29,16 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Share<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Share<R> {
-    pub fn share_text(&self, _window: Window<R>, payload: ShareTextOptions) -> Result<()> {
+    pub fn share(&self, _window: Window<R>, payload: ShareOptions) -> Result<()> {
         self.0
-            .run_mobile_plugin("shareText", payload)
+            .run_mobile_plugin("share", payload)
             .map_err(Into::into)
     }
 
-    pub fn share_data(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<()> {
+    pub fn can_share(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<CanShareResult> {
           self.0
-              .run_mobile_plugin("shareData", payload)
+              .run_mobile_plugin("canShare", payload)
               .map_err(Into::into)
-    }
-
-    pub fn share_file(&self, _window: Window<R>, payload: ShareFileOptions) -> Result<()> {
-        self.0
-            .run_mobile_plugin("shareFile", payload)
-            .map_err(Into::into)
     }
 
     pub fn cleanup(&self) -> Result<()> {

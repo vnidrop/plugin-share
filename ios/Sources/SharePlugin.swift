@@ -2,23 +2,17 @@ import Tauri
 import UIKit
 import WebKit
 
-// For the 'shareText' command
-struct ShareTextOptions: Decodable {
-    let text: String
-    var title: String?
-}
-
-// For the 'shareData' command (Base64 data)
-struct ShareDataOptions: Decodable {
+struct SharedFile: Decodable {
     let data: String
     let name: String
-    var title: String?
+    let mimeType: String
 }
 
-// For the 'shareFile' command (file path)
-struct ShareFileOptions: Decodable {
-    let path: String
+struct ShareOptions: Decodable {
+    var text: String?
     var title: String?
+    var url: String?
+    var files: [SharedFile]?
 }
 
 @_cdecl("init_plugin_share") 
@@ -28,63 +22,11 @@ func initPlugin() -> Plugin {
 
 public class SharePlugin: Plugin {
 
-    /**
-     * Opens the Sharesheet to share plain text.
-     */
-    @objc func shareText(_ invoke: Invoke) throws {
-        let args = try invoke.parseArgs(ShareTextOptions.self)
-        presentShareSheet(invoke: invoke, activityItems: [args.text], title: args.title)
-    }
+    private var temporaryFileURLs: [URL] = []
 
-    /**
-     * Shares a file whose content is provided as a Base64 string.
-     * This method creates a temporary file that is securely handled and
-     * automatically cleaned up after the share operation is complete.
-     */
-    @objc func shareData(_ invoke: Invoke) throws {
-        let args = try invoke.parseArgs(ShareDataOptions.self)
-
-        guard let decodedData = Data(base64Encoded: args.data) else {
-            invoke.reject("Invalid Base64 data provided.")
-            return
-        }
-
-        do {
-            // Create a secure temporary file URL in a dedicated directory.
-            let tempFileURL = try createSafeTempFile(for: args.name)
-            
-            // Write the data to the temporary file.
-            try decodedData.write(to: tempFileURL, options:.atomic)
-            
-            // Present the share sheet. The completion handler will delete the temp file.
-            presentShareSheet(
-              invoke: invoke, 
-              activityItems: [tempFileURL], 
-              title: args.title,
-              cleanup: { [weak self] in
-                  self?.cleanupTempFile(at: tempFileURL)
-              }
-              ) 
-        } catch {
-            invoke.reject("Failed to create or write temporary file: \(error.localizedDescription)")
-        }
-    }
-
-    /**
-     * Shares an existing file from a given file path.
-     * Ideal for large files already on the filesystem.
-     */
-    @objc func shareFile(_ invoke: Invoke) throws {
-        let args = try invoke.parseArgs(ShareFileOptions.self)
-        let fileURL = URL(fileURLWithPath: args.path)
-
-        // Robustness Check: Ensure the file exists before trying to share.
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            invoke.reject("File does not exist at the provided path: \(args.path)")
-            return
-        }
-
-        presentShareSheet(invoke: invoke, activityItems:[fileURL], title: args.title)
+    @objc func canShare(_ invoke: Invoke) throws {
+        // The native share sheet is always available on iOS.
+        invoke.resolve(["value": true])
     }
 
     /**
@@ -103,47 +45,42 @@ public class SharePlugin: Plugin {
         }
     }
 
-    /**
-     * A centralized helper to configure and present the UIActivityViewController.
-     * It handles iPad popover presentation and the optional cleanup logic.
-     */
-    private func presentShareSheet(invoke: Invoke, activityItems: [Any], title: String?, cleanup: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            guard let viewController = self.manager.viewController else {
-                invoke.reject("Could not find root view controller.")
-                return
-            }
+    @objc func share(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ShareOptions.self)
+        var activityItems: [Any] = []
 
-            let activityViewController = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-            
-            // This is the crucial part for reliability. This block is guaranteed to be called
-            // when the share sheet is dismissed, regardless of the outcome.
-            activityViewController.completionWithItemsHandler = { (activityType, completed, returnedItems, error) in
-                // Perform the cleanup task (like deleting a temp file) if one was provided.
-                cleanup?()
+        if let urlString = args.url, let url = URL(string: urlString) {
+            activityItems.append(url)
+        }
+        if let text = args.text {
+            activityItems.append(text)
+        }
+
+        if let files = args.files {
+            for file in files {
+                guard let decodedData = Data(base64Encoded: file.data) else {
+                    invoke.reject("Invalid Base64 data for file: \(file.name)")
+                    return
+                }
                 
-                if let anError = error {
-                    invoke.reject("Sharing failed: \(anError.localizedDescription)")
-                } else {
-                    // Resolve the invoke. `completed` is true if an action was taken, false if cancelled.
-                    invoke.resolve()
+                do {
+                    let tempFileURL = try createSafeTempFile(for: file.name)
+                    try decodedData.write(to: tempFileURL, options:.atomic)
+                    activityItems.append(tempFileURL)
+                    temporaryFileURLs.append(tempFileURL)
+                } catch {
+                    invoke.reject("Failed to create temporary file: \(error.localizedDescription)")
+                    return
                 }
             }
-
-            // On iPad, the share sheet must be presented as a popover.
-            if let popoverController = activityViewController.popoverPresentationController {
-                popoverController.sourceView = viewController.view
-                popoverController.sourceRect = CGRect(
-                    x: viewController.view.bounds.midX,
-                    y: viewController.view.bounds.midY,
-                    width: 0,
-                    height: 0
-                )
-                popoverController.permittedArrowDirections =  []
-            }
-
-            viewController.present(activityViewController, animated: true, completion: nil)
         }
+
+        if activityItems.isEmpty {
+            invoke.reject("No content provided to share.")
+            return
+        }
+
+        presentShareSheet(invoke: invoke, activityItems: activityItems)
     }
     
     /**
@@ -171,18 +108,49 @@ public class SharePlugin: Plugin {
     private func createSafeTempFile(for untrustedFileName: String) throws -> URL {
         let safeDir = try getSafeShareDir()
         
-        // Sanitize the filename to remove any path components, preventing traversal.
         let sanitizedBaseName = URL(fileURLWithPath: untrustedFileName).lastPathComponent
         
-        // Prepending a UUID guarantees uniqueness and prevents name collisions.
         let finalFileName = "\(UUID().uuidString)-\(sanitizedBaseName)"
         
         return safeDir.appendingPathComponent(finalFileName)
     }
 
-    private func cleanupTempFile(at url: URL) {
-        DispatchQueue.global(qos: .utility).async {
-            try? FileManager.default.removeItem(at: url)
+    private func presentShareSheet(invoke: Invoke, activityItems: [Any]) {
+        DispatchQueue.main.async {
+            guard let viewController = self.manager.viewController else {
+                invoke.reject("Could not find root view controller.")
+                return
+            }
+
+            let activityViewController = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+            
+            activityViewController.completionWithItemsHandler = { _, _, _, error in
+                self.cleanupTemporaryFiles()
+                
+                if let anError = error {
+                    invoke.reject("Sharing failed: \(anError.localizedDescription)")
+                } else {
+                    invoke.resolve()
+                }
+            }
+
+            // iPad presentation logic
+            if let popoverController = activityViewController.popoverPresentationController {
+                popoverController.sourceView = viewController.view
+                popoverController.sourceRect = CGRect(x: viewController.view.bounds.midX, y: viewController.view.bounds.midY, width: 0, height: 0)
+                popoverController.permittedArrowDirections = []
+            }
+
+            viewController.present(activityViewController, animated: true, completion: nil)
+        }
+    }
+
+    private func cleanupTemporaryFiles() {
+        DispatchQueue.global(qos:.utility).async {
+            for url in self.temporaryFileURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
+            self.temporaryFileURLs.removeAll()
         }
     }
 }

@@ -1,3 +1,3 @@
 [default]
-description = "Default permissions for the plugin"
-permissions = ["allow-share-data", "allow-share-text", "allow-share-file"]
+description = "Default permissions for the Vnidrop Plugin, all commands can be invoked by default."
+permissions = ["allow-share", "allow-can-share", "allow-cleanup"]

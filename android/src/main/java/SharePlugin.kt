@@ -1,6 +1,7 @@
 package plugin.vnidrop.share
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
@@ -18,104 +19,89 @@ import java.io.IOException
 import java.util.UUID
 
 @InvokeArg
-class ShareTextOptions {
-    lateinit var text: String
-    var mimeType: String = "text/plain"
-    var title: String? = null
-}
-
-@InvokeArg
-class ShareFileByDataOptions {
+class SharedFile {
     lateinit var data: String
     lateinit var name: String
-    var mimeType: String = "application/octet-stream"
-    var title: String? = null
+    lateinit var mimeType: String
 }
 
 @InvokeArg
-class ShareFileByContentUriOptions {
-    lateinit var path: String 
+class ShareOptions {
+    var text: String? = null
     var title: String? = null
+    var url: String? = null
+    var files: List<SharedFile>? = null
 }
 
 @TauriPlugin
 class SharePlugin(private val activity: Activity): Plugin(activity) {
-    /**
-     * Opens the Sharesheet to share plain text.
-     */
+
     @Command
-    fun shareText(invoke: Invoke) {        
-        val args = invoke.parseArgs(ShareTextOptions::class.java)
-
-        val sendIntent = Intent().apply {
-            action = Intent.ACTION_SEND
-            type = args.mimeType
-            putExtra(Intent.EXTRA_TEXT, args.text)
-            putExtra(Intent.EXTRA_TITLE, args.title)
-        }
-
-        val chooser = Intent.createChooser(sendIntent, args.title)
-
-        // Robustness check: Ensure there is an app that can handle this intent.
-        if (chooser.resolveActivity(activity.packageManager)!= null) {
-            activity.startActivity(chooser)
-            invoke.resolve()
-        } else {
-            invoke.reject("No app found to handle sharing text.")
-        }
+    fun canShare(invoke: Invoke) {
+        // The native share sheet is almost always available on Android.
+        // This command primarily serves to confirm the plugin is installed and responsive.
+        val result = JSObject()
+        result.put("value", true)
+        invoke.resolve(result)
     }
 
-    /**
-     * Shares a file whose content is provided as a Base64 string.
-     * Ideal for small, dynamically generated files.
-     */
     @Command
-    fun shareData(invoke: Invoke) {
+    fun share(invoke: Invoke) {
         try {
-            val args = invoke.parseArgs(ShareFileByDataOptions::class.java)
-            val decodedBytes = Base64.decode(args.data, Base64.DEFAULT)
+            val args = invoke.parseArgs(ShareOptions::class.java)
+            val fileUris = ArrayList<Uri>()
+            var determinedMimeType = "text/plain"
 
-            // Create a secure file in our dedicated share cache
-            val tempFile = createSafeFile(args.name)
+            args.files?.let {
+                if (it.isNotEmpty()) {
+                    for (file in it) {
+                        val decodedBytes = Base64.decode(file.data, Base64.DEFAULT)
+                        val tempFile = createSafeFile(file.name)
+                        FileOutputStream(tempFile).use { outputStream ->
+                            outputStream.write(decodedBytes)
+                        }
 
-            // Write the decoded data to the secure file
-            FileOutputStream(tempFile).use { it.write(decodedBytes) }
+                        val authority = "${activity.packageName}.fileprovider"
+                        fileUris.add(
+                            FileProvider.getUriForFile(activity, authority, tempFile)
+                        )
+                    }
 
-            // Launch the share intent
-            launchShareIntent(invoke, tempFile, args.mimeType, args.title)
-        } catch (e: Exception) {
-            invoke.reject("Failed to share file from data: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Securely shares a file from an external source (e.g., file picker) using its content URI.
-     * This method follows Android's best practices by copying the file content into the app's
-     * private cache, ensuring the app has proper authority to share it via FileProvider.
-     */
-    @Command
-    fun shareFile(invoke: Invoke) {
-        try {
-            val args = invoke.parseArgs(ShareFileByContentUriOptions::class.java)
-            val contentUri = Uri.parse(args.path)
-            val contentResolver = activity.contentResolver
-
-            val fileName = getFileNameFromUri(contentResolver, contentUri)
-
-            val mimeType = contentResolver.getType(contentUri)?: "application/octet-stream"
-
-            val tempFile = createSafeFile(fileName)
-
-            contentResolver.openInputStream(contentUri)?.use { inputStream ->
-                FileOutputStream(tempFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
+                    determinedMimeType = determineMimeType(it)
                 }
-            }?: throw IOException("Failed to open input stream for URI: $contentUri")
+            }
 
-            launchShareIntent(invoke, tempFile, mimeType, args.title)
+            val shareIntent = Intent()
+            if (fileUris.isNotEmpty()) {
+                shareIntent.action = if (fileUris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
+                if (fileUris.size > 1) {
+                    shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, fileUris)
+                } else {
+                    shareIntent.putExtra(Intent.EXTRA_STREAM, fileUris[0])
+                }
 
+                shareIntent.clipData = ClipData.newUri(activity.contentResolver, "Shared Files", fileUris[0])
+            } else {
+                shareIntent.action = Intent.ACTION_SEND
+            }
+
+            shareIntent.type = determinedMimeType
+
+            val combinedText = args.url ?: args.text
+            if (combinedText != null) {
+                shareIntent.putExtra(Intent.EXTRA_TEXT, combinedText)
+            }
+            if (args.title != null) {
+                shareIntent.putExtra(Intent.EXTRA_TITLE, args.title)
+            }
+
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val chooser = Intent.createChooser(shareIntent, args.title)
+            activity.startActivity(chooser)
+
+            invoke.resolve()
         } catch (e: Exception) {
-            invoke.reject("Failed to share file from URI: ${e.message}", e)
+            invoke.reject("Failed to share content: ${e.message}", e)
         }
     }
 
@@ -139,25 +125,18 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
         }
     }
 
-    /**
-     * Creates and launches the ACTION_SEND Intent using the configured FileProvider.
-     */
-    private fun launchShareIntent(invoke: Invoke, file: File, mimeType: String, title: String?) {
-        val authority = "${activity.packageName}.fileprovider"
-        val contentUri = FileProvider.getUriForFile(activity, authority, file)
+    private fun determineMimeType(files: List<SharedFile>): String {
+        if (files.isEmpty()) return "*/*"
+        val firstMimeType = files.mimeType
+        val firstGeneralType = firstMimeType.substringBefore('/')
+        
+        val allSame = files.all { it.mimeType == firstMimeType }
+        if (allSame) return firstMimeType
 
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = mimeType
-            putExtra(Intent.EXTRA_STREAM, contentUri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            if (title!= null) {
-                putExtra(Intent.EXTRA_TITLE, title)
-            }
-        }
+        val allSameGeneral = files.all { it.mimeType.startsWith(firstGeneralType) }
+        if (allSameGeneral) return "$firstGeneralType/*"
 
-        val chooser = Intent.createChooser(shareIntent, title)
-        activity.startActivity(chooser)
-        invoke.resolve()
+        return "*/*"
     }
 
     /**
