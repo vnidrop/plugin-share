@@ -1,4 +1,4 @@
-use crate::models::{CanShareResult};
+use crate::models::CanShareResult;
 use crate::{Error, ShareOptions, SharedFile};
 use base64::{engine::general_purpose, Engine as _};
 use objc2::runtime::AnyObject;
@@ -8,7 +8,7 @@ use objc2::{
 };
 use objc2_app_kit::{NSSharingServicePicker, NSView};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{NSArray, NSString, NSURL, NSObject};
+use objc2_foundation::{NSArray, NSObject, NSString, NSURL};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{io::Write, path::Path, sync::mpsc};
 use tauri::{Runtime, Window};
@@ -30,7 +30,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
     let (tx, rx) = mpsc::channel();
     let window_clone = window.clone();
 
-    let _temp_files: Vec<NamedTempFile> = Vec::new();
+    let mut _temp_files: Vec<NamedTempFile> = Vec::new();
 
     window.run_on_main_thread(move || {
         let result = (|| -> Result<(), Error> {
@@ -45,7 +45,8 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
             };
 
             if !combined_text.is_empty() {
-                items_to_share.push(unsafe { Retained::cast(NSString::from_str(&combined_text)) });
+                items_to_share
+                    .push(unsafe { Retained::cast_unchecked(NSString::from_str(&combined_text)) });
             }
 
             if let Some(files) = options.files {
@@ -53,26 +54,34 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
                     let temp_file = create_temp_file_for_data(&file)?;
                     let path_str = temp_file.path().to_string_lossy().to_string();
                     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path_str)) };
-                    items_to_share.push(unsafe { Retained::cast(url) });
+                    items_to_share.push(unsafe { Retained::cast_unchecked(url) });
                     _temp_files.push(temp_file);
                 }
             }
-            
+
             if items_to_share.is_empty() {
-                return Err(Error::InvalidArgs("No content provided to share.".to_string()));
+                return Err(Error::InvalidArgs(
+                    "No content provided to share.".to_string(),
+                ));
             }
 
             autoreleasepool(|_pool| {
-                let objects = &*items_to_share;
-                let items_array = NSArray::from_slice(&objects);
+                let objects_refs: Vec<&AnyObject> = items_to_share
+                    .iter()
+                    .map(|obj| obj.as_ref() as &AnyObject)
+                    .collect();
+                let items_array = NSArray::from_slice(&objects_refs);
                 let picker = unsafe {
-                    NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items_array)
+                    NSSharingServicePicker::initWithItems(
+                        NSSharingServicePicker::alloc(),
+                        &*items_array,
+                    )
                 };
-                
+
                 let bounds = ns_view.bounds();
                 unsafe {
                     picker.showRelativeToRect_ofView_preferredEdge(
-                       CGRect {
+                        CGRect {
                             origin: CGPoint {
                                 x: bounds.size.width / 2.0,
                                 y: bounds.size.height / 2.0,
@@ -89,7 +98,8 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
             });
             Ok(())
         })();
-        tx.send(result).expect("Failed to send result from main thread");
+        tx.send(result)
+            .expect("Failed to send result from main thread");
     })?;
 
     rx.recv()??;
