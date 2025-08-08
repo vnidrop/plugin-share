@@ -35,13 +35,14 @@ pub fn share<R: Runtime>(
     let (tx, rx) = mpsc::channel();
     let window_clone = window.clone();
 
-    let mut _temp_files: Vec<NamedTempFile> = Vec::new();
-
+    let managed_files = state.inner().managed_files.clone();
+ 
     window.run_on_main_thread(move || {
         let result = (|| -> Result<(), Error> {
             let ns_view = get_ns_view(&window_clone)?;
             let mut items_to_share: Vec<Retained<NSObject>> = Vec::new();
-            let temp_file_manager_clone = state.inner().managed_files.clone();
+
+            let temp_file_manager_clone = managed_files.clone();
 
             let combined_text = match (options.text, options.url) {
                 (Some(t), Some(u)) => format!("{}\n{}", t, u),
