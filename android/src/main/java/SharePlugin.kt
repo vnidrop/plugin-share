@@ -127,7 +127,7 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
 
     private fun determineMimeType(files: List<SharedFile>): String {
         if (files.isEmpty()) return "*/*"
-        val firstMimeType = files[0].mimeType
+        val firstMimeType = files.first().mimeType
         val firstGeneralType = firstMimeType.substringBefore('/')
         
         val allSame = files.all { it.mimeType == firstMimeType }
