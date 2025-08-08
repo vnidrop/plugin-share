@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedFile {
-    pub data: String, 
+    pub data: String,
     pub name: String,
     pub mime_type: String,
 }

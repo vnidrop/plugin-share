@@ -1,7 +1,7 @@
-use serde::{Serialize};
-use thiserror::Error;
 use raw_window_handle::HandleError;
+use serde::Serialize;
 use std::sync::mpsc::RecvError;
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

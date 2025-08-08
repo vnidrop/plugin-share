@@ -1,15 +1,20 @@
-use tauri::{AppHandle, Runtime, Window};
-use tauri::plugin::PluginApi;
+use crate::state::PluginTempFileManager;
 use crate::{models::*, Result};
+use tauri::plugin::PluginApi;
+use tauri::{AppHandle, Runtime, State, Window};
 
 use crate::platform;
 
 pub struct Share<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Share<R> {
-
-    pub fn share(&self, window: Window<R>, options: ShareOptions) -> Result<()> {
-        platform::share(window, options)
+    pub fn share(
+        &self,
+        window: Window<R>,
+        options: ShareOptions,
+        state: State<'_, PluginTempFileManager>,
+    ) -> Result<()> {
+        platform::share(window, options, state)
     }
 
     pub fn can_share(&self) -> Result<CanShareResult> {

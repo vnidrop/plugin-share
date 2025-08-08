@@ -1,4 +1,5 @@
 use crate::models::CanShareResult;
+use crate::state::PluginTempFileManager;
 use crate::{Error, ShareOptions, SharedFile};
 use base64::{engine::general_purpose, Engine as _};
 use objc2::runtime::AnyObject;
@@ -11,7 +12,7 @@ use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::{NSArray, NSObject, NSString, NSURL};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{io::Write, path::Path, sync::mpsc};
-use tauri::{Runtime, Window};
+use tauri::{Runtime, State, Window};
 use tempfile::{Builder, NamedTempFile};
 
 pub fn cleanup() -> Result<(), Error> {
@@ -26,7 +27,11 @@ pub fn can_share() -> Result<CanShareResult, Error> {
 }
 
 /// Shares content using the native macOS sharing service.
-pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(), Error> {
+pub fn share<R: Runtime>(
+    window: Window<R>,
+    options: ShareOptions,
+    state: State<'_, PluginTempFileManager>,
+) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel();
     let window_clone = window.clone();
 
@@ -36,6 +41,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
         let result = (|| -> Result<(), Error> {
             let ns_view = get_ns_view(&window_clone)?;
             let mut items_to_share: Vec<Retained<NSObject>> = Vec::new();
+            let temp_file_manager_clone = state.inner().managed_files.clone();
 
             let combined_text = match (options.text, options.url) {
                 (Some(t), Some(u)) => format!("{}\n{}", t, u),
@@ -51,11 +57,24 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
 
             if let Some(files) = options.files {
                 for file in files {
-                    let temp_file = create_temp_file_for_data(&file)?;
-                    let path_str = temp_file.path().to_string_lossy().to_string();
+                    let temp_file_named = create_temp_file_for_data(&file)?;
+                    let temp_path = temp_file_named.into_temp_path();
+                    let path_buf = temp_path.keep()?;
+
+                    let path_str = path_buf.to_string_lossy().to_string();
                     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path_str)) };
                     items_to_share.push(unsafe { Retained::cast_unchecked(url) });
-                    _temp_files.push(temp_file);
+
+                    if let Err(e) = temp_file_manager_clone
+                        .lock()
+                        .map_err(|e| format!("Failed to lock mutex: {}", e))
+                        .and_then(|mut files| {
+                            files.push(path_buf);
+                            Ok(())
+                        })
+                    {
+                        eprintln!("Failed to add file to managed list: {}", e);
+                    }
                 }
             }
 
