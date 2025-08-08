@@ -2,7 +2,9 @@ use serde::de::DeserializeOwned;
 use tauri::{
     plugin::{PluginApi, PluginHandle},
     AppHandle, Runtime, Window,
+    State
 };
+use crate::state::PluginTempFileManager;
 
 use crate::{models::*, Result};
 
@@ -12,7 +14,9 @@ const PLUGIN_IDENTIFIER: &str = "plugin.vnidrop.share";
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_share);
 
-// initializes the Kotlin or Swift plugin classes
+/// Initializes the mobile platform implementation of the plugin.
+///
+/// This function registers the mobile plugin and returns a handle to its APIs.
 pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
@@ -26,11 +30,14 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     Ok(Share(handle))
 }
 
-/// Access to the share APIs.
+/// A handle to the `tauri-plugin-share` APIs for mobile.
+///
+/// This struct provides the public interface for the plugin's commands on mobile,
+/// which are invoked through the mobile bridge.
 pub struct Share<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Share<R> {
-    pub fn share(&self, _window: Window<R>, payload: ShareOptions) -> Result<()> {
+    pub fn share(&self, _window: Window<R>, payload: ShareOptions, _state: State<'_, PluginTempFileManager>) -> Result<()> {
         self.0
             .run_mobile_plugin("share", payload)
             .map_err(Into::into)

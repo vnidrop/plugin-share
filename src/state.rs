@@ -1,9 +1,13 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-/// Manages temporary files created by the plugin.
+/// Manages the lifecycle of temporary files created by the plugin.
+///
+/// This struct holds a thread-safe list of `PathBuf` for all temporary files
+/// that have been created and need to be cleaned up. It's intended to be
+/// managed as a Tauri state.
 pub struct PluginTempFileManager {
-    /// A list of all managed temporary files.
+    /// A thread-safe vector to store the paths of temporary files.
     pub managed_files: Arc<Mutex<Vec<PathBuf>>>,
 }
 
@@ -14,33 +18,11 @@ impl PluginTempFileManager {
         }
     }
 
-    pub fn add_file(&self, path: PathBuf) -> Result<(), String> {
-        let mut files = self
-            .managed_files
-            .lock()
-            .map_err(|e| format!("Failed to lock mutex: {}", e))?;
-        files.push(path);
-        Ok(())
-    }
-
-    pub fn remove_and_delete_file(&self, path_to_remove: &PathBuf) -> Result<(), String> {
-        let mut files = self
-            .managed_files
-            .lock()
-            .map_err(|e| format!("Failed to lock mutex: {}", e))?;
-        if let Some(index) = files.iter().position(|p| p == path_to_remove) {
-            let file_path = files.remove(index);
-            std::fs::remove_file(&file_path) // [4]
-               .map_err(|e| format!("Failed to delete file {}: {}", file_path.display(), e))?;
-            Ok(())
-        } else {
-            Err(format!(
-                "File not found in managed list: {}",
-                path_to_remove.display()
-            ))
-        }
-    }
-
+    /// Cleans up all files currently managed by this instance.
+    ///
+    /// This method iterates through the list of file paths, attempts to
+    /// delete each file, and clears the list. It also handles a poisoned
+    /// mutex gracefully by recovering the inner data and continuing the cleanup.
     pub fn cleanup_all_managed_files(&self) {
         let mut files = match self.managed_files.lock() {
             Ok(guard) => guard,

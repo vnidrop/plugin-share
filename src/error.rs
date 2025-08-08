@@ -1,13 +1,15 @@
 use raw_window_handle::HandleError;
 use serde::Serialize;
+use tempfile::PathPersistError;
 use std::sync::mpsc::RecvError;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// This enum defines the errors that can be sent back to the frontend.
-// Using `thiserror` makes it easy to convert from other error types,
-// and `serde::Serialize` allows it to be returned in a command's `Err` variant.
+/// Defines the custom error types for the plugin.
+///
+/// This enum is serializable, allowing these errors to be sent
+/// from the Rust backend to the JavaScript frontend.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Invalid arguments: {0}")]
@@ -20,6 +22,8 @@ pub enum Error {
     Tauri(#[from] tauri::Error),
     #[error("Failed to receive from channel: {0}")]
     Recv(#[from] RecvError),
+    #[error("File persistence error: {0}")]
+    FilePersist(String),
     #[error("Failed to get window handle: {0}")]
     Handle(#[from] HandleError),
     #[error(transparent)]
@@ -35,5 +39,11 @@ impl Serialize for Error {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.to_string().as_ref())
+    }
+}
+
+impl From<PathPersistError> for Error {
+    fn from(err: PathPersistError) -> Self {
+        Error::FilePersist(format!("Failed to persist temporary file: {}", err))
     }
 }

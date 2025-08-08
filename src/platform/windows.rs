@@ -2,6 +2,7 @@ use crate::state::PluginTempFileManager;
 use crate::{CanShareResult, Error, ShareOptions, SharedFile};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows::Foundation::Uri;
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -80,15 +81,45 @@ pub fn share<R: Runtime>(
                             properties.SetTitle(&HSTRING::from(title))?;
                         }
 
-                        let combined_text = match (&options_clone.text, &options_clone.url) {
-                            (Some(t), Some(u)) => format!("{}\n{}", t, u),
-                            (Some(t), None) => t.clone(),
-                            (None, Some(u)) => u.clone(),
-                            (None, None) => String::new(),
-                        };
+                        if let (Some(t), Some(u)) = (&options_clone.text, &options_clone.url) {
+                            // Set the plain text content.
+                            data.SetText(&HSTRING::from(t))?;
 
-                        if !combined_text.is_empty() {
-                            data.SetText(&HSTRING::from(combined_text))?;
+                            // Attempt to parse the URL string into a Windows Uri object.
+                            // It is crucial to validate the URL string to ensure it forms a valid Uri.
+                            if let Ok(uri) = Uri::CreateUri(&HSTRING::from(u)) {
+                                // For web URLs (HTTP/HTTPS), SetWebLink is the preferred method.
+                                // For application-specific URIs, SetApplicationLink would be used.
+                                // Here, we assume it's a web URL for demonstration.
+                                data.SetWebLink(&uri)?;
+                            } else {
+                                // If the URL string cannot be parsed into a valid Uri object,
+                                // a warning is logged. In such cases, the URL might still be
+                                // valuable as part of the plain text.
+                                eprintln!("Warning: Could not parse URL '{}' for DataPackage::SetWebLink. Setting as part of text.", u);
+                                // Optionally, if it's critical for the URL to be present in some form,
+                                // even if not semantically, it could be appended to the plain text.
+                                let combined_text_fallback = format!("{}\n{}", t, u);
+                                data.SetText(&HSTRING::from(combined_text_fallback))?;
+                                // However, the primary goal remains semantic separation.
+                            }
+                        }
+                        // If only text is provided, simply set the plain text content.
+                        else if let Some(t) = &options_clone.text {
+                            if!t.is_empty() {
+                                data.SetText(&HSTRING::from(t))?;
+                            }
+                        }
+                        // If only a URL is provided, attempt to set it semantically.
+                        else if let Some(u) = &options_clone.url {
+                            if let Ok(uri) = Uri::CreateUri(&HSTRING::from(u)) {
+                                data.SetWebLink(&uri)?;
+                            } else {
+                                // If URL parsing fails, fall back to setting it as plain text.
+                                // This ensures the URL string is still transferred, even without its semantic type.
+                                eprintln!("Warning: Could not parse URL '{}' for DataPackage::SetWebLink. Setting as plain text.", u);
+                                data.SetText(&HSTRING::from(u))?;
+                            }
                         }
 
                         if let Some(files) = &options_clone.files {

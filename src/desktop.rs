@@ -5,6 +5,10 @@ use tauri::{AppHandle, Runtime, State, Window};
 
 use crate::platform;
 
+/// A handle to the `tauri-plugin-share` APIs for desktop.
+///
+/// This struct provides the public interface for the plugin's commands,
+/// abstracting away the platform-specific implementations.
 pub struct Share<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Share<R> {

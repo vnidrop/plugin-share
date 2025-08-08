@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
  *   title: "Check this out!",
  *   text: "Here's an interesting article.",
  *   url: "https://example.com/article",
- *   files: [myFile] // optional
+ *   files: [myFile]
  * };
  * ```
  */
