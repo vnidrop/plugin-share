@@ -30,7 +30,6 @@ pub async fn share<R: Runtime>(
     app.share().share(window, options, state)
 }
 
-
 /// Checks if the native sharing dialog is available on the current platform.
 ///
 /// This is useful for conditionally showing a share button in the frontend.

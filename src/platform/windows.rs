@@ -2,14 +2,14 @@ use crate::state::PluginTempFileManager;
 use crate::{CanShareResult, Error, ShareOptions, SharedFile};
 use base64::{engine::general_purpose, Engine as _};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Foundation::Uri;
 use std::cell::RefCell;
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use tauri::{Runtime, State, Window};
-use tempfile::{Builder, NamedTempFile};
 use windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
+use windows::Foundation::Uri;
 use windows::Storage::IStorageItem;
 use windows::{
     core::{Interface, HSTRING},
@@ -23,8 +23,7 @@ use windows::{
 };
 use windows_collections::IIterable;
 
-// This thread-local static variable is the key to solving the lifetime issue.
-// It will hold the DataTransferManager and its event registration token, keeping them
+// This thread-local holds the DataTransferManager and its event registration token, keeping them
 // alive for the duration of the asynchronous share operation. It's only accessible
 // on the main thread, which is safe for these non-thread-safe WinRT types.
 thread_local! {
@@ -134,34 +133,26 @@ pub fn share<R: Runtime>(
 
                                     for file in files {
                                         match create_temp_file_for_data(&file) {
-                                            Ok(temp_file) => {
-                                                let temp_path = temp_file.into_temp_path();
-
-                                                match temp_path.keep() {
-                                                    Ok(path_buf) => {
-                                                        let path_str = path_buf.to_string_lossy().to_string();
-                                                        if let Err(e) = managed_files_arc_for_async.lock().map_err(|e| format!("Failed to lock mutex: {}", e)).and_then(|mut files| {
-                                                            files.push(path_buf.clone());
-                                                            Ok(())
-                                                        }) {
-                                                            eprintln!("Failed to update temp file manager: {}", e);
-                                                        }
-
-                                                        match StorageFile::GetFileFromPathAsync(&HSTRING::from(path_str)) {
-                                                            Ok(op) => match op.get() {
-                                                                Ok(storage_file) => {
-                                                                    if let Ok(item) = storage_file.cast() {
-                                                                        storage_items.push(item);
-                                                                    }
-                                                                }, 
-                                                                Err(e) => eprintln!("Failed to get storage file: {}", e),
-                                                            }, 
-                                                            Err(e) => eprintln!("Failed to get file from path: {}", e),
-                                                        }
-                                                    },
-                                                    Err(e) => eprintln!("Failed to keep temporary file: {}", e),
+                                            Ok(path_buf) => {
+                                                let path_str = path_buf.to_string_lossy().to_string();
+                                                if let Err(e) = managed_files_arc_for_async.lock().map_err(|e| format!("Failed to lock mutex: {}", e)).and_then(|mut files| {
+                                                    files.push(path_buf.clone());
+                                                    Ok(())
+                                                }) {
+                                                    eprintln!("Failed to update temp file manager: {}", e);
                                                 }
-                                                
+
+                                                match StorageFile::GetFileFromPathAsync(&HSTRING::from(path_str)) {
+                                                    Ok(op) => match op.get() {
+                                                        Ok(storage_file) => {
+                                                            if let Ok(item) = storage_file.cast() {
+                                                                storage_items.push(item);
+                                                            }
+                                                        }, 
+                                                        Err(e) => eprintln!("Failed to get storage file: {}", e),
+                                                    }, 
+                                                    Err(e) => eprintln!("Failed to get file from path: {}", e),
+                                                }
                                             },
                                             Err(e) => eprintln!("Failed to create temp file: {}", e),
                                         }
@@ -258,7 +249,7 @@ fn get_plugin_temp_dir() -> Result<PathBuf, Error> {
 }
 
 /// Creates a secure temporary file from Base64 data.
-fn create_temp_file_for_data(file: &SharedFile) -> Result<NamedTempFile, Error> {
+fn create_temp_file_for_data(file: &SharedFile) -> Result<PathBuf, Error> {
     let decoded_bytes = general_purpose::STANDARD
         .decode(&file.data)
         .map_err(|_| Error::InvalidArgs("Invalid Base64 data provided".to_string()))?;
@@ -272,17 +263,15 @@ fn create_temp_file_for_data(file: &SharedFile) -> Result<NamedTempFile, Error> 
         .ok_or_else(|| Error::InvalidArgs("File name contains invalid UTF-8".to_string()))?;
 
     let temp_dir = get_plugin_temp_dir()?;
+    let temp_path = temp_dir.join(sanitized_name);
 
-    // Use the tempfile crate's builder for secure, unique file creation.
-    let mut temp_file = Builder::new()
-        .prefix(&format!("{}-", uuid::Uuid::new_v4())) // Guarantees uniqueness
-        .suffix(&format!("-{}", sanitized_name))
-        .tempfile_in(temp_dir)
+    let mut file_handle = File::create(&temp_path)
         .map_err(|e| Error::TempFile(format!("Failed to create temp file: {}", e)))?;
 
-    temp_file
+    // For now we will keep the real file name, we may introduce a way allow the end dev decide later.
+    file_handle
         .write_all(&decoded_bytes)
         .map_err(|e| Error::TempFile(format!("Failed to write to temp file: {}", e)))?;
 
-    Ok(temp_file)
+    Ok(temp_path)
 }

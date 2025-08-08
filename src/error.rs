@@ -1,7 +1,7 @@
 use raw_window_handle::HandleError;
 use serde::Serialize;
-use tempfile::PathPersistError;
 use std::sync::mpsc::RecvError;
+use tempfile::PathPersistError;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;

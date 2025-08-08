@@ -1,10 +1,9 @@
+use crate::state::PluginTempFileManager;
 use serde::de::DeserializeOwned;
 use tauri::{
     plugin::{PluginApi, PluginHandle},
-    AppHandle, Runtime, Window,
-    State
+    AppHandle, Runtime, State, Window,
 };
-use crate::state::PluginTempFileManager;
 
 use crate::{models::*, Result};
 
@@ -37,7 +36,12 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Share<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Share<R> {
-    pub fn share(&self, _window: Window<R>, payload: ShareOptions, _state: State<'_, PluginTempFileManager>) -> Result<()> {
+    pub fn share(
+        &self,
+        _window: Window<R>,
+        payload: ShareOptions,
+        _state: State<'_, PluginTempFileManager>,
+    ) -> Result<()> {
         self.0
             .run_mobile_plugin("share", payload)
             .map_err(Into::into)
