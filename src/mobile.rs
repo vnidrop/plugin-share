@@ -35,9 +35,9 @@ impl<R: Runtime> Share<R> {
             .map_err(Into::into)
     }
 
-    pub fn can_share(&self, _window: Window<R>, payload: ShareDataOptions) -> Result<CanShareResult> {
+    pub fn can_share(&self) -> Result<CanShareResult> {
           self.0
-              .run_mobile_plugin("canShare", payload)
+              .run_mobile_plugin("canShare", ())
               .map_err(Into::into)
     }
 

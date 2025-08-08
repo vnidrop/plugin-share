@@ -1,14 +1,14 @@
-use crate::models::{ShareDataOptions, ShareFileOptions, ShareTextOptions, CanShareResult};
+use crate::models::{CanShareResult};
 use crate::{Error, ShareOptions, SharedFile};
 use base64::{engine::general_purpose, Engine as _};
+use objc2::runtime::AnyObject;
 use objc2::{
     rc::{autoreleasepool, Retained},
-    runtime::AnyObject,
     AnyThread,
 };
 use objc2_app_kit::{NSSharingServicePicker, NSView};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{NSArray, NSString, NSURL};
+use objc2_foundation::{NSArray, NSString, NSURL, NSObject};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{io::Write, path::Path, sync::mpsc};
 use tauri::{Runtime, Window};
@@ -35,7 +35,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
     window.run_on_main_thread(move || {
         let result = (|| -> Result<(), Error> {
             let ns_view = get_ns_view(&window_clone)?;
-            let mut items_to_share: Vec<Box<dyn objc2::Message>> = Vec::new();
+            let mut items_to_share: Vec<Retained<NSObject>> = Vec::new();
 
             let combined_text = match (options.text, options.url) {
                 (Some(t), Some(u)) => format!("{}\n{}", t, u),
@@ -45,7 +45,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
             };
 
             if !combined_text.is_empty() {
-                items_to_share.push(Box::new(NSString::from_str(&combined_text)));
+                items_to_share.push(unsafe { Retained::cast(NSString::from_str(&combined_text)) });
             }
 
             if let Some(files) = options.files {
@@ -53,7 +53,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
                     let temp_file = create_temp_file_for_data(&file)?;
                     let path_str = temp_file.path().to_string_lossy().to_string();
                     let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path_str)) };
-                    items_to_share.push(Box::new(url));
+                    items_to_share.push(unsafe { Retained::cast(url) });
                     _temp_files.push(temp_file);
                 }
             }
@@ -63,7 +63,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
             }
 
             autoreleasepool(|_pool| {
-                let objects = vec![&*items_to_share as &dyn objc2::Message];
+                let objects = &*items_to_share;
                 let items_array = NSArray::from_slice(&objects);
                 let picker = unsafe {
                     NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items_array)

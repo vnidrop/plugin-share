@@ -59,7 +59,7 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
     let (tx, rx) = mpsc::channel();
     let win_clone = window.clone();
     
-    window.run_on_main_thread(move | | {
+    window.run_on_main_thread(move || {
         let options_arc = std::sync::Arc::new(options.clone());
         let result = (|| -> Result<(), Error> {
             initialize_winrt_thread()?;
@@ -97,7 +97,9 @@ pub fn share<R: Runtime>(window: Window<R>, options: ShareOptions) -> Result<(),
                                 let files = files.clone(); // clone to move into async
                                 async move {
                                     let mut storage_items: Vec<IStorageItem> = Vec::new();
-                                    
+
+                                    let mut temp_files: Vec<NamedTempFile> = Vec::new();
+
                                     for file in files {
                                         match create_temp_file_for_data(&file) {
                                             Ok(temp_file) => {
