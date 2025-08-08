@@ -127,7 +127,7 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
 
     private fun determineMimeType(files: List<SharedFile>): String {
         if (files.isEmpty()) return "*/*"
-        val firstMimeType = files.mimeType
+        val firstMimeType = files.first().mimeType
         val firstGeneralType = firstMimeType.substringBefore('/')
         
         val allSame = files.all { it.mimeType == firstMimeType }
@@ -179,21 +179,5 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
         }
 
         return intendedFile
-    }
-
-    /**
-     * Safely retrieves the display name of a file from a content URI.
-     */
-    private fun getFileNameFromUri(resolver: ContentResolver, uri: Uri): String {
-        var fileName = "unknown_file"
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex!= -1) {
-                    fileName = cursor.getString(nameIndex)
-                }
-            }
-        }
-        return fileName
     }
 }

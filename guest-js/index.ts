@@ -1,52 +1,89 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * The data to be shared, mirroring the Web Share API's ShareData dictionary.
+ * Represents the content to be shared, similar to the Web Share API's ShareData dictionary.
+ *
+ * Example:
+ * ```ts
+ * const shareData: ShareData = {
+ *   title: "Check this out!",
+ *   text: "Here's an interesting article.",
+ *   url: "https://example.com/article",
+ *   files: [myFile] // optional
+ * };
+ * ```
  */
 export interface ShareData {
-  /** An array of File objects to be shared. */
+  /** Optional array of File objects to share (e.g., images, PDFs). */
   files?: File[];
-  /** The text content to be shared. */
+  /** Optional text content to be shared. */
   text?: string;
-  /** A title for the content being shared. */
+  /** Optional title describing the shared content. */
   title?: string;
-  /** A URL to be shared. */
+  /** Optional URL to be shared. */
   url?: string;
 }
 
 /**
- * Checks if the sharing API is available and if the given data can be shared.
- * On mobile, this will almost always resolve to true, but it's good practice
- * for feature detection and platform consistency.
- * @param data The data to test for shareability.
- * @returns A promise that resolves with a boolean indicating if sharing is possible.
+ * Checks whether the native sharing capability is available for the given data.
+ *
+ * On mobile platforms, this will typically return `true`.
+ * This is useful for feature detection before attempting to share.
+ *
+ * Example:
+ * ```ts
+ * if (await canShare({ text: "Hello World" })) {
+ *   console.log("Sharing is supported!");
+ * } else {
+ *   console.log("Sharing is not available on this platform.");
+ * }
+ * ```
+ *
+ * @param data Optional ShareData to check shareability for.
+ * @returns Promise resolving to `true` if sharing is possible.
  */
 export async function canShare(data?: ShareData): Promise<boolean> {
-  // On mobile, the native share sheet is always available.
-  // We can add more sophisticated checks here if needed in the future.
-  // For now, we confirm the plugin is available.
   const result = (await invoke("plugin:vnidrop-share|can_share")) as {
-    value: boolean;
+    value: any;
   };
-  return result.value === true;
+  return result.value === true || result.value === "true";
 }
 
 /**
- * Manually triggers the cleanup of any temporary files created by the plugin.
+ * Manually triggers cleanup of temporary files created by the plugin.
  *
- * @returns A promise that resolves when the cleanup operation is complete.
+ * Useful when files are generated during sharing but you want to remove them
+ * immediately after to save storage space.
+ *
+ * Example:
+ * ```ts
+ * await cleanup();
+ * console.log("Temporary share files removed.");
+ * ```
+ *
+ * @returns Promise resolving when cleanup is complete.
  */
 export async function cleanup(): Promise<void> {
   await invoke("plugin:vnidrop-share|cleanup");
 }
 
+/**
+ * Converts a `File` object to a Base64-encoded string (without the Data URL prefix).
+ *
+ * Example:
+ * ```ts
+ * const base64Data = await fileToBase64(myFile);
+ * console.log(base64Data.slice(0, 50)); // preview first 50 chars
+ * ```
+ *
+ * @param file File to convert.
+ * @returns Promise resolving to Base64 string.
+ */
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
-      // The result includes the data URL prefix (e.g., "data:image/png;base64,"),
-      // which we will strip off to send only the raw Base64.
       const base64String = (reader.result as string).split(",")[1];
       resolve(base64String);
     };
@@ -55,10 +92,20 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * Opens the native system share dialog to share content.
+ * Opens the native share dialog to share text, URLs, and/or files.
  *
- * @param data The content to share, including text, URLs, and/or files.
- * @returns A promise that resolves when the share dialog is closed.
+ * Example:
+ * ```ts
+ * await share({
+ *   title: "My Photo",
+ *   text: "Check out this picture!",
+ *   files: [myImageFile]
+ * });
+ * console.log("Share dialog closed.");
+ * ```
+ *
+ * @param data Content to share.
+ * @returns Promise resolving when the share dialog is closed.
  */
 export async function share(data: ShareData): Promise<void> {
   const payload: any = {
