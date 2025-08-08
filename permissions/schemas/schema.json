@@ -295,40 +295,40 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the share_data command without any pre-configured scope.",
+          "description": "Enables the can_share command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-share-data",
-          "markdownDescription": "Enables the share_data command without any pre-configured scope."
+          "const": "allow-can-share",
+          "markdownDescription": "Enables the can_share command without any pre-configured scope."
         },
         {
-          "description": "Denies the share_data command without any pre-configured scope.",
+          "description": "Denies the can_share command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-share-data",
-          "markdownDescription": "Denies the share_data command without any pre-configured scope."
+          "const": "deny-can-share",
+          "markdownDescription": "Denies the can_share command without any pre-configured scope."
         },
         {
-          "description": "Enables the share_file command without any pre-configured scope.",
+          "description": "Enables the cleanup command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-share-file",
-          "markdownDescription": "Enables the share_file command without any pre-configured scope."
+          "const": "allow-cleanup",
+          "markdownDescription": "Enables the cleanup command without any pre-configured scope."
         },
         {
-          "description": "Denies the share_file command without any pre-configured scope.",
+          "description": "Denies the cleanup command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-share-file",
-          "markdownDescription": "Denies the share_file command without any pre-configured scope."
+          "const": "deny-cleanup",
+          "markdownDescription": "Denies the cleanup command without any pre-configured scope."
         },
         {
-          "description": "Enables the share_text command without any pre-configured scope.",
+          "description": "Enables the share command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-share-text",
-          "markdownDescription": "Enables the share_text command without any pre-configured scope."
+          "const": "allow-share",
+          "markdownDescription": "Enables the share command without any pre-configured scope."
         },
         {
-          "description": "Denies the share_text command without any pre-configured scope.",
+          "description": "Denies the share command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-share-text",
-          "markdownDescription": "Denies the share_text command without any pre-configured scope."
+          "const": "deny-share",
+          "markdownDescription": "Denies the share command without any pre-configured scope."
         },
         {
           "description": "Default permissions for the Vnidrop Plugin, all commands can be invoked by default.\n#### This default permission set includes:\n\n- `allow-share`\n- `allow-can-share`\n- `allow-cleanup`",

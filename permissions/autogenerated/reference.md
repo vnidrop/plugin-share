@@ -20,25 +20,12 @@ Default permissions for the Vnidrop Plugin, all commands can be invoked by defau
 <tr>
 <td>
 
-`vnidrop-share:allow-share-data`
+`vnidrop-share:allow-can-share`
 
 </td>
 <td>
 
-Enables the share_data command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`vnidrop-share:deny-share-data`
-
-</td>
-<td>
-
-Denies the share_data command without any pre-configured scope.
+Enables the can_share command without any pre-configured scope.
 
 </td>
 </tr>
@@ -46,25 +33,12 @@ Denies the share_data command without any pre-configured scope.
 <tr>
 <td>
 
-`vnidrop-share:allow-share-file`
+`vnidrop-share:deny-can-share`
 
 </td>
 <td>
 
-Enables the share_file command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`vnidrop-share:deny-share-file`
-
-</td>
-<td>
-
-Denies the share_file command without any pre-configured scope.
+Denies the can_share command without any pre-configured scope.
 
 </td>
 </tr>
@@ -72,12 +46,12 @@ Denies the share_file command without any pre-configured scope.
 <tr>
 <td>
 
-`vnidrop-share:allow-share-text`
+`vnidrop-share:allow-cleanup`
 
 </td>
 <td>
 
-Enables the share_text command without any pre-configured scope.
+Enables the cleanup command without any pre-configured scope.
 
 </td>
 </tr>
@@ -85,12 +59,38 @@ Enables the share_text command without any pre-configured scope.
 <tr>
 <td>
 
-`vnidrop-share:deny-share-text`
+`vnidrop-share:deny-cleanup`
 
 </td>
 <td>
 
-Denies the share_text command without any pre-configured scope.
+Denies the cleanup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vnidrop-share:allow-share`
+
+</td>
+<td>
+
+Enables the share command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`vnidrop-share:deny-share`
+
+</td>
+<td>
+
+Denies the share command without any pre-configured scope.
 
 </td>
 </tr>
