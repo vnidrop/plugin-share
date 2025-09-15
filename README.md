@@ -4,13 +4,13 @@
 
 A Tauri plugin that provides a seamless, cross-platform interface for native sharing. This plugin allows your application to share text, URLs, and files using the native share dialogs on macOS, Windows, and mobile devices.
 
-## 💡 Why this plugin?
+## Why this plugin?
 
 The web's native [Web Share API](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share) offers a great way to integrate with a device's sharing capabilities. However, a key limitation is that it only works in a **secure context** (i.e., HTTPS). Since Tauri applications run in a local, non-secure context, the Web Share API is unavailable. This plugin replicates the functionality of the Web Share API, providing a familiar and easy-to-use interface for Tauri developers while leveraging the underlying native APIs to ensure full functionality on all supported platforms.
 
 For file sharing, the plugin intelligently manages the lifecycle of temporary files. It creates secure temporary files from Base64 data, ensuring they persist for the duration of the sharing operation, and automatically cleans them up when the application exits. On mobile platforms like Android and iOS, the native sharing APIs are directly invoked, and temporary files are managed and cleaned up within the native code.
 
-## 📦 Installation
+## Installation
 
 ### Rust
 
@@ -18,7 +18,7 @@ Add the plugin to your `Cargo.toml`:
 
 ```sh
 [dependencies]
-tauri-plugin-vnidrop-share = "0.1.0"
+tauri-plugin-vnidrop-share = "0.2.0"
 ```
 
 ### Frontend
@@ -29,7 +29,7 @@ Install the JavaScript package using npm:
 npm install @vnidrop/tauri-plugin-share
 ```
 
-## 🚀 Usage
+## Usage
 
 ### Frontend (TypeScript/JavaScript)
 
