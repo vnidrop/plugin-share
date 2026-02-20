@@ -57,7 +57,7 @@ The frontend API is designed to closely resemble the Web Share API, making it in
 2. **Sharing Content**
 
    Use the `share()` function with a `ShareData` object to trigger the native dialog. The files field requires an array of `File` objects, which the plugin automatically handles by converting them to Base64 and managing their lifecycle in the backend.
-   Note: on Android and Windows, the promise resolves when the app regains focus after the share UI closes (best-effort). On macOS, the share delegate is used to resolve when the share completes. We may expose a configuration option in the future to let developers choose the resolution behavior (immediate vs. on-focus vs. delayed).
+   Note: on Android and Windows, the promise resolves when the app regains focus after the share UI closes (best-effort). On macOS, the share delegate is used to resolve when the share completes. On iOS, the promise is resolved using the native completion handler (`UIActivityViewController.completionWithItemsHandler`), which provides accurate resolution when sharing completes. We may expose a configuration option in the future to let developers choose the resolution behavior (immediate vs. on-focus vs. delayed).
 
    ```ts
    import { share, canShare } from "@vnidrop/tauri-plugin-share";
