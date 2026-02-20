@@ -210,9 +210,13 @@ pub fn share<R: Runtime>(
         return Err(e.into());
     }
 
-    let share_result = rx
-        .recv()
-        .map_err(|_| Error::NativeApi("Failed to receive result from main thread".to_string()))?;
+    let share_result = match rx.recv() {
+        Ok(result) => result,
+        Err(err) => {
+            focus_wait.cancel();
+            return Err(err.into());
+        }
+    };
     if let Err(err) = share_result {
         focus_wait.cancel();
         return Err(err);
