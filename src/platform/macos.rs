@@ -14,6 +14,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle, WindowHandle};
 use std::{io::Write, path::Path, sync::mpsc};
 use tauri::{Runtime, State, Window};
 use tempfile::{Builder, NamedTempFile};
+use super::focus;
 
 pub fn cleanup() -> Result<(), Error> {
     // Temporary file management on macOS is automatic thanks to `NamedTempFile`.
@@ -32,12 +33,13 @@ pub fn share<R: Runtime>(
     options: ShareOptions,
     state: State<'_, PluginTempFileManager>,
 ) -> Result<(), Error> {
+    let focus_wait = focus::begin_focus_wait(&window)?;
     let (tx, rx) = mpsc::channel();
     let window_clone = window.clone();
 
     let managed_files = state.inner().managed_files.clone();
  
-    window.run_on_main_thread(move || {
+    if let Err(e) = window.run_on_main_thread(move || {
         let result = (|| -> Result<(), Error> {
             let ns_view = get_ns_view(&window_clone)?;
             let mut items_to_share: Vec<Retained<NSObject>> = Vec::new();
@@ -120,9 +122,18 @@ pub fn share<R: Runtime>(
         })();
         tx.send(result)
             .expect("Failed to send result from main thread");
-    })?;
+    }) {
+        focus_wait.cancel();
+        return Err(e.into());
+    }
 
-    rx.recv()??;
+    let share_result = rx.recv()?;
+    if let Err(err) = share_result {
+        focus_wait.cancel();
+        return Err(err);
+    }
+
+    focus_wait.wait()?;
     Ok(())
 }
 
