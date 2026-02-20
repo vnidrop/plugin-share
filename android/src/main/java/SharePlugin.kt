@@ -34,6 +34,9 @@ class ShareOptions {
 
 @TauriPlugin
 class SharePlugin(private val activity: Activity): Plugin(activity) {
+    private var pendingShareInvoke: Invoke? = null
+    private var shareInProgress = false
+    private var awaitingShareResume = false
 
     @Command
     fun canShare(invoke: Invoke) {
@@ -46,6 +49,11 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
 
     @Command
     fun share(invoke: Invoke) {
+        if (shareInProgress) {
+            invoke.reject("Share already in progress.")
+            return
+        }
+
         try {
             val args = invoke.parseArgs(ShareOptions::class.java)
             val fileUris = ArrayList<Uri>()
@@ -96,11 +104,30 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
 
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             val chooser = Intent.createChooser(shareIntent, args.title)
-            activity.startActivity(chooser)
 
-            invoke.resolve()
+            pendingShareInvoke = invoke
+            shareInProgress = true
+            awaitingShareResume = false
+            activity.startActivity(chooser)
         } catch (e: Exception) {
+            resetPendingShare()
             invoke.reject("Failed to share content: ${e.message}", e)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (shareInProgress) {
+            awaitingShareResume = true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (shareInProgress && awaitingShareResume) {
+            val invoke = pendingShareInvoke
+            resetPendingShare()
+            invoke?.resolve()
         }
     }
 
@@ -136,6 +163,12 @@ class SharePlugin(private val activity: Activity): Plugin(activity) {
         if (allSameGeneral) return "$firstGeneralType/*"
 
         return "*/*"
+    }
+
+    private fun resetPendingShare() {
+        pendingShareInvoke = null
+        shareInProgress = false
+        awaitingShareResume = false
     }
 
     /**
