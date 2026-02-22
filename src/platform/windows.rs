@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use super::focus;
 use tauri::{Runtime, State, Window};
 use windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
 use windows::Foundation::Uri;
@@ -55,12 +56,13 @@ pub fn share<R: Runtime>(
     options: ShareOptions,
     state: State<'_, PluginTempFileManager>,
 ) -> Result<(), Error> {
+    let focus_wait = focus::begin_focus_wait(&window)?;
     let (tx, rx) = mpsc::channel();
     let win_clone = window.clone();
 
     let managed_files_arc = state.inner().managed_files.clone();
 
-    window.run_on_main_thread(move || {
+    if let Err(e) = window.run_on_main_thread(move || {
         let options_arc = std::sync::Arc::new(options.clone());
         let result = (|| -> Result<(), Error> {
             initialize_winrt_thread()?;
@@ -196,14 +198,32 @@ pub fn share<R: Runtime>(
                 *state.borrow_mut() = Some((dtm, token));
             });
 
+            // Best-effort note: ShowShareUIForWindow doesn't provide a reliable completion callback
+            // for desktop apps. Consider making resolution behavior configurable for end developers
+            // (immediate vs. on-focus vs. delayed).
             unsafe { interop.ShowShareUIForWindow(hwnd) }?;
             Ok(())
         })();
         tx.send(result).ok();
-    })?;
+    }) {
+        focus_wait.cancel();
+        return Err(e.into());
+    }
 
-    rx.recv()
-        .map_err(|_| Error::NativeApi("Failed to receive result from main thread".to_string()))?
+    let share_result = match rx.recv() {
+        Ok(result) => result,
+        Err(err) => {
+            focus_wait.cancel();
+            return Err(err.into());
+        }
+    };
+    if let Err(err) = share_result {
+        focus_wait.cancel();
+        return Err(err);
+    }
+
+    focus_wait.wait()?;
+    Ok(())
 }
 
 /// Initializes the Windows Runtime on the current thread.

@@ -8,6 +8,9 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use self::linux::*;
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+mod focus;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
