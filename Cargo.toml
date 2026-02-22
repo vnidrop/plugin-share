@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-vnidrop-share"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Tauri plugin for sharing content via the system's share dialog."
 license = "MIT"
 authors = [ "Abass Hammed", "Vnidrop" ]

@@ -18,7 +18,7 @@ Add the plugin to your `Cargo.toml`:
 
 ```sh
 [dependencies]
-tauri-plugin-vnidrop-share = "0.2.0"
+tauri-plugin-vnidrop-share = "0.2.1"
 ```
 
 ### Frontend
@@ -77,7 +77,7 @@ The frontend API is designed to closely resemble the Web Share API, making it in
    // Share a file (e.g., an image)
    async function shareFile() {
      const fileInput = document.querySelector(
-       'input[type="file"]'
+       'input[type="file"]',
      ) as HTMLInputElement;
      const file = fileInput.files?.[0];
 
