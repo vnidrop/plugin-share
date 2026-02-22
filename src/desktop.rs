@@ -1,7 +1,7 @@
 use crate::state::PluginTempFileManager;
 use crate::{models::*, Result};
 use tauri::plugin::PluginApi;
-use tauri::{AppHandle, Runtime, State, Window};
+use tauri::{AppHandle, Manager, Runtime, State, Window};
 
 use crate::platform;
 
@@ -26,6 +26,7 @@ impl<R: Runtime> Share<R> {
     }
 
     pub fn cleanup(&self) -> Result<()> {
+        self.0.state::<PluginTempFileManager>().cleanup_all_managed_files();
         platform::cleanup()
     }
 }

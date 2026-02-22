@@ -1,3 +1,4 @@
+use objc2::Message;
 use crate::models::CanShareResult;
 use crate::state::PluginTempFileManager;
 use crate::{Error, ShareOptions, SharedFile};
@@ -6,7 +7,7 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{
     define_class, msg_send,
     rc::{autoreleasepool, Retained},
-    DefinedClass, MainThreadOnly,
+    AnyThread, DefinedClass, MainThreadOnly,
 };
 use objc2_app_kit::{
     NSSharingService, NSSharingServiceDelegate, NSSharingServicePicker,
@@ -43,12 +44,11 @@ define_class!(
     unsafe impl NSObjectProtocol for SharePickerDelegate {}
 
     unsafe impl NSSharingServicePickerDelegate for SharePickerDelegate {
-        #[unsafe(method(sharingServicePicker:delegateForSharingService:))]
+        #[unsafe(method_id(sharingServicePicker:delegateForSharingService:))]
         fn sharing_service_picker_delegate_for_sharing_service(
             &self,
             _picker: &NSSharingServicePicker,
             _service: &NSSharingService,
-            _mtm: MainThreadMarker,
         ) -> Option<Retained<ProtocolObject<dyn NSSharingServiceDelegate>>> {
             Some(ProtocolObject::from_retained(self.retain()))
         }
@@ -124,8 +124,8 @@ fn remove_active_delegate(delegate: &SharePickerDelegate) {
 }
 
 pub fn cleanup() -> Result<(), Error> {
-    // Temporary file management on macOS is automatic thanks to `NamedTempFile`.
-    // This function can remain empty or perform a more thorough cleanup if needed.
+    // macOS file cleanup is handled by the shared `PluginTempFileManager` in desktop::Share::cleanup
+    // and on plugin drop. Nothing additional is required here.
     Ok(())
 }
 
@@ -145,7 +145,7 @@ pub fn share<R: Runtime>(
     let window_clone = window.clone();
 
     let managed_files = state.inner().managed_files.clone();
- 
+
     if let Err(e) = window.run_on_main_thread(move || {
         let result = (|| -> Result<(), Error> {
             let ns_view = get_ns_view(&window_clone)?;
@@ -210,7 +210,7 @@ pub fn share<R: Runtime>(
                 let mtm = MainThreadMarker::new().expect("Main thread marker");
                 let delegate = SharePickerDelegate::new(mtm, completion_tx);
                 ACTIVE_DELEGATES.with(|delegates| delegates.borrow_mut().push(delegate.retain()));
-                picker.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+                unsafe { picker.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
 
                 let bounds = ns_view.bounds();
                 unsafe {
